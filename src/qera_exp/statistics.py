@@ -201,20 +201,24 @@ def make_shard_plan(config: Mapping[str, Any]) -> dict[str, Any]:
         shard["index"] = index
         shard["module_count"] = len(shard["modules"])
         shard["over_configured_limit"] = int(shard["estimated_dense_accumulator_bytes"]) > limit
-    retained_raw_bytes = sum(int(shard["estimated_raw_statistics_bytes"]) for shard in shards)
+    total_raw_bytes = sum(int(shard["estimated_raw_statistics_bytes"]) for shard in shards)
+    peak_raw_bytes = max((int(shard["estimated_raw_statistics_bytes"]) for shard in shards), default=0)
     disk_free_bytes = shutil.disk_usage(root).free
     retain_raw = not bool(config["runtime"].get("cleanup_raw_after_solve", False))
     warnings = []
-    if retain_raw and retained_raw_bytes > disk_free_bytes:
+    required_raw_bytes = total_raw_bytes if retain_raw else peak_raw_bytes
+    if required_raw_bytes > disk_free_bytes:
         warnings.append(
-            "Estimated retained raw A/G statistics exceed the currently free space on the RUN_DIR filesystem"
+            "Estimated raw A/G disk requirement exceeds the currently free space on the RUN_DIR filesystem"
         )
     result = {
         "schema_version": 1,
         "created_at_utc": utc_now(),
         "max_dense_ram_bytes_per_shard": limit,
         "raw_statistics_retained_after_solve": retain_raw,
-        "estimated_retained_raw_statistics_bytes": retained_raw_bytes if retain_raw else 0,
+        "estimated_total_raw_statistics_bytes": total_raw_bytes,
+        "estimated_peak_raw_statistics_bytes_per_shard": peak_raw_bytes,
+        "estimated_retained_raw_statistics_bytes": total_raw_bytes if retain_raw else 0,
         "disk_free_bytes_at_plan": disk_free_bytes,
         "warnings": warnings,
         "shard_count": len(shards),

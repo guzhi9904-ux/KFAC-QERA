@@ -32,7 +32,7 @@ qera-exp --config "$CONFIG" quantize
 stage "plan full-A/full-G collection shards"
 qera-exp --config "$CONFIG" plan
 
-python -c 'import json,os; p=json.load(open(os.path.join(os.environ["RUN_DIR"],"state/shard_plan.json"))); print("shards=%d retained_raw_GiB=%.2f disk_free_GiB=%.2f" % (p["shard_count"],p["estimated_retained_raw_statistics_bytes"]/2**30,p["disk_free_bytes_at_plan"]/2**30)); [print("WARNING:", x) for x in p["warnings"]]'
+python -c 'import json,os; p=json.load(open(os.path.join(os.environ["RUN_DIR"],"state/shard_plan.json"))); print("shards=%d total_raw_GiB=%.2f peak_temp_raw_GiB=%.2f retained_raw_GiB=%.2f disk_free_GiB=%.2f" % (p["shard_count"],p["estimated_total_raw_statistics_bytes"]/2**30,p["estimated_peak_raw_statistics_bytes_per_shard"]/2**30,p["estimated_retained_raw_statistics_bytes"]/2**30,p["disk_free_bytes_at_plan"]/2**30)); [print("WARNING:", x) for x in p["warnings"]]'
 
 SHARDS=$(python -c 'import json,os; print(json.load(open(os.path.join(os.environ["RUN_DIR"],"state/shard_plan.json")))["shard_count"])')
 for SHARD in $(seq 0 $((SHARDS - 1))); do

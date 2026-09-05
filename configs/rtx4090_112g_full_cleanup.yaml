@@ -1,0 +1,9 @@
+extends: rtx4090_112g_full.yaml
+
+experiment:
+  name: rtx4090_112g_full_cleanup
+
+runtime:
+  # Delete a module's raw A/G only after all six corrections and the
+  # per-module completion checkpoint have been written and validated.
+  cleanup_raw_after_solve: true

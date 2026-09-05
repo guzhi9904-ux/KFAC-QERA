@@ -27,5 +27,14 @@ def test_shard_plan_reports_retained_raw_disk_estimate(tmp_path: Path) -> None:
     }
     plan = make_shard_plan(config)
     assert plan["raw_statistics_retained_after_solve"] is True
+    assert plan["estimated_total_raw_statistics_bytes"] == 880
+    assert plan["estimated_peak_raw_statistics_bytes_per_shard"] == 880
     assert plan["estimated_retained_raw_statistics_bytes"] == 880
     assert sum(shard["estimated_raw_statistics_bytes"] for shard in plan["shards"]) == 880
+
+    config["runtime"]["cleanup_raw_after_solve"] = True
+    cleanup_plan = make_shard_plan(config)
+    assert cleanup_plan["raw_statistics_retained_after_solve"] is False
+    assert cleanup_plan["estimated_total_raw_statistics_bytes"] == 880
+    assert cleanup_plan["estimated_peak_raw_statistics_bytes_per_shard"] == 880
+    assert cleanup_plan["estimated_retained_raw_statistics_bytes"] == 0

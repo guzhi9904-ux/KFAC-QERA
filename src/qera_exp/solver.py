@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import json
 import math
 import time
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from .utils import (
     sha256_file,
     tensor_sha256,
     upsert_csv,
+    utc_now,
 )
 
 
@@ -233,21 +235,70 @@ def _method_metrics(method: str, ad: Metric, af: Metric, gi: Metric, gd: Metric,
     return mapping[method]
 
 
+def _completed_module_state(
+    root: Path,
+    module: str,
+    methods: list[str],
+    maximum_rank: int,
+) -> dict[str, Any] | None:
+    state_path = root / "state" / f"solve_module_{safe_name(module)}.json"
+    if not state_path.is_file():
+        return None
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        state.get("status") != "PASS"
+        or state.get("module") != module
+        or state.get("methods") != methods
+        or int(state.get("maximum_rank", -1)) != maximum_rank
+    ):
+        return None
+    metric_path = root / "statistics" / "metrics" / f"{safe_name(module)}.json"
+    if not metric_path.is_file():
+        return None
+    artifacts = state.get("artifacts")
+    if not isinstance(artifacts, list) or len(artifacts) != len(methods):
+        return None
+    observed_methods = []
+    for item in artifacts:
+        if not isinstance(item, dict) or item.get("method") not in methods:
+            return None
+        observed_methods.append(str(item["method"]))
+        artifact = Path(str(item.get("artifact", "")))
+        metadata = artifact.with_suffix(".json")
+        if not artifact.is_file() or not metadata.is_file() or sha256_file(artifact) != item.get("artifact_sha256"):
+            return None
+    if sorted(observed_methods) != sorted(methods):
+        return None
+    return state
+
+
 def solve_raw_module(config: Mapping[str, Any], module: str) -> dict[str, Any]:
     root = output_root(config)
-    log(root, f"module={module} loading raw A/G", "solve")
     raw_artifact = root / "statistics" / "raw" / f"{safe_name(module)}.safetensors"
     raw_metadata = raw_artifact.with_suffix(".json")
+    statistics = config["statistics"]
+    methods = [str(method) for method in statistics["methods"]]
+    maximum_rank = int(statistics["maximum_rank"])
+    completed = _completed_module_state(root, module, methods, maximum_rank)
+    if completed is not None:
+        log(root, f"module={module} already solved; checkpoint validated", "solve")
+        if bool(config["runtime"].get("cleanup_raw_after_solve", False)):
+            raw_artifact.unlink(missing_ok=True)
+            raw_metadata.unlink(missing_ok=True)
+        return completed
+    log(root, f"module={module} loading raw A/G", "solve")
     if not raw_artifact.is_file() or not raw_metadata.is_file():
         raise FileNotFoundError(f"Raw statistics absent: {module}")
     raw = load_safetensors(raw_artifact)
-    meta = __import__("json").loads(raw_metadata.read_text(encoding="utf-8"))
+    meta = json.loads(raw_metadata.read_text(encoding="utf-8"))
     if sha256_file(raw_artifact) != meta["artifact_sha256"]:
         raise RuntimeError(f"Raw statistics hash mismatch: {module}")
     count = int(meta["valid_prediction_token_count"])
     a_raw, g_raw = raw["a_sum"].double() / count, raw["g_sum"].double() / count
     a_direct, g_direct = raw["a_direct_sum"].double() / count, raw["g_direct_sum"].double() / count
-    statistics = config["statistics"]
     log(root, f"module={module} factorizing A dimension={a_raw.shape[0]} method={statistics['root_method']}", "solve")
     with heartbeat(root, f"module={module} factorizing A", "solve"):
         a_summary, ad, af = analyze_metric(
@@ -272,12 +323,10 @@ def solve_raw_module(config: Mapping[str, Any], module: str) -> dict[str, Any]:
     log(root, f"module={module} G factor ready elapsed={g_summary['elapsed_seconds']:.1f}s", "solve")
     error = raw["error_fp32"].double()
     gi = Metric("I", g_raw.shape[0])
-    maximum_rank = int(statistics["maximum_rank"])
     if maximum_rank > min(error.shape):
         raise ValueError(f"statistics.maximum_rank={maximum_rank} exceeds the minimum weight dimension for {module}: {min(error.shape)}")
     rows = []
     energy_rows = []
-    methods = list(statistics["methods"])
     methods_started = time.time()
     for method_index, method in enumerate(methods, 1):
         a_metric, g_metric = _method_metrics(str(method), ad, af, gi, gd, gf)
@@ -348,16 +397,28 @@ def solve_raw_module(config: Mapping[str, Any], module: str) -> dict[str, Any]:
     upsert_csv(root / "correction_manifest.csv", rows, ("module", "method"))
     upsert_csv(root / "rank_energy.csv", energy_rows, ("module", "method", "rank"))
     metric_summary = {"module": module, "valid_prediction_token_count": count, "a": a_summary, "g": g_summary}
-    save_json(root / "statistics" / "metrics" / f"{safe_name(module)}.json", metric_summary)
+    metric_path = root / "statistics" / "metrics" / f"{safe_name(module)}.json"
+    save_json(metric_path, metric_summary)
+    result = {
+        "status": "PASS",
+        "completed_at_utc": utc_now(),
+        "module": module,
+        "methods": methods,
+        "maximum_rank": maximum_rank,
+        "metric_summary": str(metric_path),
+        "artifacts": [
+            {"method": str(row["method"]), "artifact": str(row["artifact"]), "artifact_sha256": row["artifact_sha256"]}
+            for row in rows
+        ],
+    }
+    save_json(root / "state" / f"solve_module_{safe_name(module)}.json", result)
     if bool(config["runtime"].get("cleanup_raw_after_solve", False)):
         raw_artifact.unlink()
         raw_metadata.unlink()
-    return {"status": "PASS", "module": module, "methods": len(rows), "maximum_rank": maximum_rank}
+    return result
 
 
 def solve_shard(config: Mapping[str, Any], shard_index: int) -> dict[str, Any]:
-    import json
-
     root = output_root(config)
     plan = json.loads((root / "state" / "shard_plan.json").read_text(encoding="utf-8"))
     try:
