@@ -1,0 +1,26 @@
+extends: base.yaml
+
+experiment:
+  name: rtx4090_112g_smoke
+
+model:
+  layers: [0, 1]
+
+data:
+  calibration:
+    windows: 8
+  wikitext2:
+    windows: 8
+  c4:
+    windows: 8
+
+statistics:
+  ranks: [8, 16]
+  maximum_rank: 16
+  # Keep eigh in the smoke run so the spectrum diagnostics are available.
+  root_method: eigh
+
+runtime:
+  lm_head_chunk_size: 64
+  max_dense_ram_gib_per_shard: 48
+  cleanup_raw_after_solve: false

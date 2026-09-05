@@ -54,6 +54,12 @@ def doctor(config: Mapping[str, Any]) -> dict[str, Any]:
         "cuda_available": torch.cuda.is_available(),
         "cuda_device_count": torch.cuda.device_count(),
         "cuda_devices": [torch.cuda.get_device_name(index) for index in range(torch.cuda.device_count())],
+        "cuda_memory_total_bytes": [
+            torch.cuda.get_device_properties(index).total_memory for index in range(torch.cuda.device_count())
+        ],
+        "cuda_memory_free_bytes": [
+            torch.cuda.mem_get_info(index)[0] for index in range(torch.cuda.device_count())
+        ],
         "cuda_runtime": torch.version.cuda,
         "bf16_supported": torch.cuda.is_bf16_supported() if torch.cuda.is_available() else False,
         "ram_total_bytes": psutil.virtual_memory().total,

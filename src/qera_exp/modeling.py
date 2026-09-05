@@ -141,6 +141,9 @@ def module_manifest(model: nn.Module, names: Sequence[str]) -> list[dict[str, An
                 "weight_parameters": module.weight.numel(),
                 "weight_dtype": str(module.weight.dtype).removeprefix("torch."),
                 "estimated_dense_accumulator_bytes": dense_bytes,
+                # The raw artifact contains the FP64 A/G sums and diagonals,
+                # plus one FP32 quantization-error matrix.
+                "estimated_raw_statistics_bytes": dense_bytes + 4 * module.weight.numel(),
             }
         )
     return rows

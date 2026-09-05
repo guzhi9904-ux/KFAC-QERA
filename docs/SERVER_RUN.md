@@ -3,8 +3,8 @@
 ## 1. 环境
 
 ```bash
-git clone <your-repository-url>
-cd qera_mxint4_full_ag
+git clone https://github.com/guzhi9904-ux/KFAC-QERA.git
+cd KFAC-QERA
 python -m venv .venv
 source .venv/bin/activate
 pip install -U pip
@@ -94,7 +94,7 @@ full A/G 对宽 MLP 很重。单个线性层的 FP64 accumulator 约为：
 8 × (d_in² + d_out² + d_in + d_out) bytes
 ```
 
-`runtime.max_dense_ram_gib_per_shard` 只限制 accumulator 估算值，不包含模型、autograd saved tensors、分解 workspace 和 Python 进程开销。服务器实际可用主存应留出至少 30% 余量。
+`runtime.max_dense_ram_gib_per_shard` 只限制 accumulator 估算值，不包含模型、autograd saved tensors、分解 workspace 和 Python 进程开销。服务器实际可用主存应留出至少 30% 余量。`plan` 同时报告保留 raw A/G 所需的预计磁盘容量和当前空闲空间。
 
 Llama-3 8B 的宽 MLP 会让 FP64 `eigh` 很慢。建议：
 
@@ -108,4 +108,6 @@ Llama-3 8B 的宽 MLP 会让 FP64 `eigh` 很慢。建议：
 - `quantize` 会校验并复用已有量化文件；checkpoint 变更时直接报错。
 - 完成的 collection shard 会由 `state/collect_shard_XXXX.json` 跳过。
 - evaluation 以 dataset/configuration/window 为键续跑。
-- 默认 solve 完成后删除该模块的 raw A/G；如需复查，设置 `cleanup_raw_after_solve: false`。
+- 默认保留该模块的 raw A/G。只有明确不再需要重新求解或复查时，才把 `cleanup_raw_after_solve` 设置为 `true`。
+
+RTX 4090 24GB / 112GB RAM 的现成配置、缓存路径和模型选择见 [SERVER_4090_112G.md](SERVER_4090_112G.md)。

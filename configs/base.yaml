@@ -84,7 +84,9 @@ runtime:
   allow_tf32: false
   lm_head_chunk_size: 128
   max_dense_ram_gib_per_shard: 24
-  cleanup_raw_after_solve: true
+  # Preserve the raw FP64 A/G sums and their audit metadata for review,
+  # archival, and controlled follow-up solves.
+  cleanup_raw_after_solve: false
 
 analysis:
   chart_dpi: 180

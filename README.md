@@ -18,7 +18,7 @@
 ## 目录
 
 ```text
-configs/                 Qwen、Llama 3 的 smoke/full 配置
+configs/                 Qwen、Llama 与 RTX 4090 服务器的 smoke/full 配置
 docs/METHOD.md           目标函数、G^(1/2) 与闭式解
 docs/SERVER_RUN.md       单机和 Slurm 运行方法
 reference_results/       当前 Qwen2.5-1.5B 与旧对角实验的小型结果文件
@@ -27,13 +27,13 @@ src/qera_exp/            实验实现
 tests/                    不加载大模型的单元测试
 ```
 
-模型权重、token 缓存、A/G 矩阵、低秩因子和逐窗口评测结果默认写到 `RUN_DIR`，并被 `.gitignore` 排除。
+模型权重、token 缓存、A/G 矩阵、低秩因子和逐窗口评测结果默认写到 `RUN_DIR`，并被 `.gitignore` 排除。raw A/G 默认保留，用于审计、归档和受控的后续求解。
 
 ## 安装
 
 ```bash
-git clone <your-repository-url>
-cd qera_mxint4_full_ag
+git clone https://github.com/guzhi9904-ux/KFAC-QERA.git
+cd KFAC-QERA
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
@@ -59,6 +59,8 @@ qera-exp --config "$CONFIG" analyze
 ```
 
 `plan` 可能产生多个 shard。必须完成 `RUN_DIR/state/shard_plan.json` 中的所有 shard 后再评测。完整流程见 [docs/SERVER_RUN.md](docs/SERVER_RUN.md)。
+
+RTX 4090 24GB、112GB RAM 的配置和当前缓存资源对应命令见 [docs/SERVER_4090_112G.md](docs/SERVER_4090_112G.md)。
 
 ## 推荐顺序
 

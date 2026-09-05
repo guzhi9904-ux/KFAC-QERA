@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from qera_exp.modeling import discover_target_modules
+from qera_exp.modeling import discover_target_modules, module_manifest
 
 
 class Attention(nn.Module):
@@ -56,3 +56,12 @@ def test_discovers_qwen_llama_projection_names() -> None:
     assert all(name.startswith("model.layers.1.") for name in names)
     assert names[0].endswith("self_attn.q_proj")
     assert names[-1].endswith("mlp.down_proj")
+
+
+def test_manifest_estimates_retained_raw_statistics() -> None:
+    model = FakeModel()
+    row = module_manifest(model, ["model.layers.0.mlp.up_proj"])[0]
+    expected_dense = 8 * (4**2 + 8**2 + 4 + 8)
+    expected_error = 4 * (4 * 8)
+    assert row["estimated_dense_accumulator_bytes"] == expected_dense
+    assert row["estimated_raw_statistics_bytes"] == expected_dense + expected_error

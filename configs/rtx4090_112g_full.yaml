@@ -1,0 +1,19 @@
+extends: base.yaml
+
+experiment:
+  name: rtx4090_112g_full
+
+model:
+  layers: all
+
+statistics:
+  # Cholesky constructs an exact damped full-metric factor without the much
+  # slower full eigendecomposition of the wide MLP covariance matrices.
+  root_method: cholesky
+
+runtime:
+  # 48 GiB leaves headroom in 112 GiB RAM for CPU-offloaded autograd tensors,
+  # factorization workspaces, the OS page cache, and Python/PyTorch overhead.
+  lm_head_chunk_size: 64
+  max_dense_ram_gib_per_shard: 48
+  cleanup_raw_after_solve: false

@@ -4,6 +4,7 @@ import contextlib
 import gc
 import json
 import math
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -187,18 +188,33 @@ def make_shard_plan(config: Mapping[str, Any]) -> dict[str, Any]:
         size = int(row["estimated_dense_accumulator_bytes"])
         target = next((shard for shard in shards if int(shard["estimated_dense_accumulator_bytes"]) + size <= limit), None)
         if target is None:
-            target = {"modules": [], "estimated_dense_accumulator_bytes": 0}
+            target = {"modules": [], "estimated_dense_accumulator_bytes": 0, "estimated_raw_statistics_bytes": 0}
             shards.append(target)
         target["modules"].append(row["module"])
         target["estimated_dense_accumulator_bytes"] += size
+        target["estimated_raw_statistics_bytes"] += int(
+            row.get("estimated_raw_statistics_bytes", size + 4 * int(row["weight_parameters"]))
+        )
     for index, shard in enumerate(shards):
         shard["index"] = index
         shard["module_count"] = len(shard["modules"])
         shard["over_configured_limit"] = int(shard["estimated_dense_accumulator_bytes"]) > limit
+    retained_raw_bytes = sum(int(shard["estimated_raw_statistics_bytes"]) for shard in shards)
+    disk_free_bytes = shutil.disk_usage(root).free
+    retain_raw = not bool(config["runtime"].get("cleanup_raw_after_solve", False))
+    warnings = []
+    if retain_raw and retained_raw_bytes > disk_free_bytes:
+        warnings.append(
+            "Estimated retained raw A/G statistics exceed the currently free space on the RUN_DIR filesystem"
+        )
     result = {
         "schema_version": 1,
         "created_at_utc": utc_now(),
         "max_dense_ram_bytes_per_shard": limit,
+        "raw_statistics_retained_after_solve": retain_raw,
+        "estimated_retained_raw_statistics_bytes": retained_raw_bytes if retain_raw else 0,
+        "disk_free_bytes_at_plan": disk_free_bytes,
+        "warnings": warnings,
         "shard_count": len(shards),
         "shards": shards,
     }
