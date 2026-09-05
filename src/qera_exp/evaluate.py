@@ -19,8 +19,10 @@ from .utils import (
     canonical_sha256,
     deterministic_runtime,
     get_module,
+    heartbeat,
     load_safetensors,
     log,
+    progress_status,
     read_csv,
     safe_name,
     save_csv,
@@ -61,8 +63,9 @@ def _module_names(root: Path) -> list[str]:
 
 def install_quantized_weights(model: torch.nn.Module, root: Path, names: list[str]) -> str:
     rows = []
+    configuration_started = time.time()
     with torch.no_grad():
-        for name in names:
+        for index, name in enumerate(names, 1):
             module = get_module(model, name)
             artifact, metadata_path = quant_paths(root, name)
             tensors = load_safetensors(artifact)
@@ -73,6 +76,7 @@ def install_quantized_weights(model: torch.nn.Module, root: Path, names: list[st
                 raise RuntimeError(f"Checkpoint differs from quantization reference: {name}")
             module.weight.copy_(tensors["wq_bf16"].to(device=module.weight.device, dtype=module.weight.dtype))
             rows.append({"module": name, "artifact_sha256": metadata["artifact_sha256"]})
+            log(root, f"installed quantized module={name} progress={progress_status(index, len(names), started)}", "evaluate")
     return canonical_sha256(rows)
 
 
@@ -152,16 +156,29 @@ def _evaluate_configuration(
 ) -> None:
     root = output_root(config)
     existing = read_csv(metrics_path)
-    for window in windows:
+    started = time.time()
+    log(root, f"{role} configuration={row['configuration']} windows={len(windows)} started", "evaluate")
+    for index, window in enumerate(windows, 1):
         matched = [
             item
             for item in existing
             if item.get("configuration") == row["configuration"] and int(item.get("window_id", -1)) == window["window_id"]
         ]
         if len(matched) == 1 and matched[0].get("window_hash") == window["window_hash"] and matched[0].get("model_hash") == model_hash:
+            log(
+                root,
+                f"{role} configuration={row['configuration']} cached "
+                f"progress={progress_status(index, len(windows), configuration_started)}",
+                "evaluate",
+            )
             continue
-        started = time.time()
-        nll, token_count = nll_sum(model, config, window, device)
+        window_started = time.time()
+        with heartbeat(
+            root,
+            f"{role} configuration={row['configuration']} window={window['window_id'] + 1}/{len(windows)}",
+            "evaluate",
+        ):
+            nll, token_count = nll_sum(model, config, window, device)
         result = {
             "dataset": role,
             "configuration": row["configuration"],
@@ -175,12 +192,17 @@ def _evaluate_configuration(
             "nll_sum": nll,
             "nll_mean": nll / token_count,
             "model_hash": model_hash,
-            "elapsed_seconds": time.time() - started,
+            "elapsed_seconds": time.time() - window_started,
             "complete": True,
         }
         upsert_csv(metrics_path, [result], ("dataset", "configuration", "window_id"))
         existing = read_csv(metrics_path)
-        log(root, f"{role} {row['configuration']} window={window['window_id'] + 1}/{len(windows)} nll={nll/token_count:.8f}", "evaluate")
+        log(
+            root,
+            f"{role} configuration={row['configuration']} nll={nll/token_count:.8f} "
+            f"progress={progress_status(index, len(windows), configuration_started)}",
+            "evaluate",
+        )
 
 
 def summarize_ppl(metrics_path: Path, destination: Path) -> list[dict[str, Any]]:
@@ -220,24 +242,44 @@ def evaluate_dataset(config: Mapping[str, Any], role: str) -> dict[str, Any]:
     deterministic_runtime(int(config["runtime"]["deterministic_seed"]), bool(config["runtime"].get("allow_tf32", False)))
     sequence = configurations(config)
     teacher_row = sequence[0]
-    teacher, _, device = load_model(config, require_input_grads=False)
+    log(root, f"{role} loading BF16 teacher model={config['model']['name_or_path']}", "evaluate")
+    with heartbeat(root, f"{role} loading BF16 teacher", "evaluate"):
+        teacher, _, device = load_model(config, require_input_grads=False)
+    log(root, f"{role} BF16 teacher ready device={device}", "evaluate")
     teacher_hash = canonical_sha256({"kind": "teacher", "model": config["model"]["name_or_path"]})
     _evaluate_configuration(teacher, config, role, teacher_row, windows, device, metrics_path, teacher_hash)
     del teacher
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    model, _, device = load_model(config, require_input_grads=False)
+    log(root, f"{role} loading model for MXINT4 and low-rank configurations", "evaluate")
+    with heartbeat(root, f"{role} loading evaluation model", "evaluate"):
+        model, _, device = load_model(config, require_input_grads=False)
+    log(root, f"{role} evaluation model ready device={device}; installing quantized weights", "evaluate")
     quant_hash = install_quantized_weights(model, root, names)
     _evaluate_configuration(model, config, role, sequence[1], windows, device, metrics_path, quant_hash)
     maximum_rank = int(config["statistics"]["maximum_rank"])
-    for row in sequence[2:]:
+    correction_rows = sequence[2:]
+    correction_started = time.time()
+    for index, row in enumerate(correction_rows, 1):
+        log(
+            root,
+            f"{role} starting corrected configuration={row['configuration']} "
+            f"progress={progress_status(index - 1, len(correction_rows), correction_started)}",
+            "evaluate",
+        )
         with LowRankBranches(model, root, names, str(row["method"]), int(row["rank"]), maximum_rank) as branches:
             model_hash = canonical_sha256({"quantization": quant_hash, "corrections": branches.joint_hash})
             _evaluate_configuration(model, config, role, row, windows, device, metrics_path, model_hash)
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        log(
+            root,
+            f"{role} completed corrected configuration={row['configuration']} "
+            f"progress={progress_status(index, len(correction_rows), correction_started)}",
+            "evaluate",
+        )
     summary_path = root / "evaluation" / f"ppl_summary_{role}.csv"
     rows = summarize_ppl(metrics_path, summary_path)
     result = {

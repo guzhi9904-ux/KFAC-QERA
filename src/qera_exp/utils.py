@@ -6,9 +6,12 @@ import json
 import os
 import random
 import tempfile
+import threading
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 
 import numpy as np
 import torch
@@ -140,11 +143,54 @@ def ensure_layout(root: Path) -> None:
 
 def log(root: Path, message: str, name: str = "run") -> None:
     line = f"{utc_now()} {message}"
-    print(f"[{name}] {message}", flush=True)
+    print(f"[{name}] {line}", flush=True)
     destination = root / "logs" / f"{name}.log"
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("a", encoding="utf-8") as stream:
         stream.write(line + "\n")
+
+
+def format_duration(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours:d}h{minutes:02d}m{secs:02d}s"
+    if minutes:
+        return f"{minutes:d}m{secs:02d}s"
+    return f"{secs:d}s"
+
+
+def progress_status(current: int, total: int, started_at: float) -> str:
+    if current < 0 or total <= 0 or current > total:
+        raise ValueError(f"Invalid progress: current={current}, total={total}")
+    elapsed = max(time.time() - started_at, 0.0)
+    percent = 100.0 * current / total
+    if current == 0:
+        eta = "unknown"
+    else:
+        eta = format_duration(elapsed * (total - current) / current)
+    return f"{current}/{total} ({percent:.1f}%) elapsed={format_duration(elapsed)} eta={eta}"
+
+
+@contextmanager
+def heartbeat(root: Path, message: str, name: str = "run", interval_seconds: float = 60.0) -> Iterator[None]:
+    if interval_seconds <= 0:
+        raise ValueError("interval_seconds must be positive")
+    stopped = threading.Event()
+    started = time.time()
+
+    def emit() -> None:
+        while not stopped.wait(interval_seconds):
+            log(root, f"{message} still_running elapsed={format_duration(time.time() - started)}", name)
+
+    worker = threading.Thread(target=emit, name=f"qera-{name}-heartbeat", daemon=True)
+    worker.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        worker.join()
 
 
 def deterministic_runtime(seed: int, allow_tf32: bool = False) -> None:

@@ -13,8 +13,10 @@ from .config import output_root
 from .modeling import layer_index, projection_name
 from .utils import (
     atomic_safetensors,
+    heartbeat,
     load_safetensors,
     log,
+    progress_status,
     safe_name,
     save_csv,
     save_json,
@@ -233,6 +235,7 @@ def _method_metrics(method: str, ad: Metric, af: Metric, gi: Metric, gd: Metric,
 
 def solve_raw_module(config: Mapping[str, Any], module: str) -> dict[str, Any]:
     root = output_root(config)
+    log(root, f"module={module} loading raw A/G", "solve")
     raw_artifact = root / "statistics" / "raw" / f"{safe_name(module)}.safetensors"
     raw_metadata = raw_artifact.with_suffix(".json")
     if not raw_artifact.is_file() or not raw_metadata.is_file():
@@ -245,22 +248,28 @@ def solve_raw_module(config: Mapping[str, Any], module: str) -> dict[str, Any]:
     a_raw, g_raw = raw["a_sum"].double() / count, raw["g_sum"].double() / count
     a_direct, g_direct = raw["a_direct_sum"].double() / count, raw["g_direct_sum"].double() / count
     statistics = config["statistics"]
-    a_summary, ad, af = analyze_metric(
-        a_raw,
-        a_direct,
-        label=f"{module}:A",
-        damping_lambda=float(statistics["lambda_a"]),
-        negative_relative_tolerance=float(statistics["negative_eigen_relative_tolerance"]),
-        root_method=str(statistics["root_method"]),
-    )
-    g_summary, gd, gf = analyze_metric(
-        g_raw,
-        g_direct,
-        label=f"{module}:G",
-        damping_lambda=float(statistics["lambda_g"]),
-        negative_relative_tolerance=float(statistics["negative_eigen_relative_tolerance"]),
-        root_method=str(statistics["root_method"]),
-    )
+    log(root, f"module={module} factorizing A dimension={a_raw.shape[0]} method={statistics['root_method']}", "solve")
+    with heartbeat(root, f"module={module} factorizing A", "solve"):
+        a_summary, ad, af = analyze_metric(
+            a_raw,
+            a_direct,
+            label=f"{module}:A",
+            damping_lambda=float(statistics["lambda_a"]),
+            negative_relative_tolerance=float(statistics["negative_eigen_relative_tolerance"]),
+            root_method=str(statistics["root_method"]),
+        )
+    log(root, f"module={module} A factor ready elapsed={a_summary['elapsed_seconds']:.1f}s", "solve")
+    log(root, f"module={module} factorizing G dimension={g_raw.shape[0]} method={statistics['root_method']}", "solve")
+    with heartbeat(root, f"module={module} factorizing G", "solve"):
+        g_summary, gd, gf = analyze_metric(
+            g_raw,
+            g_direct,
+            label=f"{module}:G",
+            damping_lambda=float(statistics["lambda_g"]),
+            negative_relative_tolerance=float(statistics["negative_eigen_relative_tolerance"]),
+            root_method=str(statistics["root_method"]),
+        )
+    log(root, f"module={module} G factor ready elapsed={g_summary['elapsed_seconds']:.1f}s", "solve")
     error = raw["error_fp32"].double()
     gi = Metric("I", g_raw.shape[0])
     maximum_rank = int(statistics["maximum_rank"])
@@ -268,9 +277,25 @@ def solve_raw_module(config: Mapping[str, Any], module: str) -> dict[str, Any]:
         raise ValueError(f"statistics.maximum_rank={maximum_rank} exceeds the minimum weight dimension for {module}: {min(error.shape)}")
     rows = []
     energy_rows = []
-    for method in statistics["methods"]:
+    methods = list(statistics["methods"])
+    methods_started = time.time()
+    for method_index, method in enumerate(methods, 1):
         a_metric, g_metric = _method_metrics(str(method), ad, af, gi, gd, gf)
-        solved = solve_weighted(error, a_metric, g_metric, maximum_rank, str(statistics.get("solve_device", "auto")))
+        method_started = time.time()
+        log(
+            root,
+            f"module={module} starting method={method} SVD "
+            f"progress={progress_status(method_index - 1, len(methods), methods_started)}",
+            "solve",
+        )
+        with heartbeat(root, f"module={module} method={method} SVD", "solve"):
+            solved = solve_weighted(
+                error,
+                a_metric,
+                g_metric,
+                maximum_rank,
+                str(statistics.get("solve_device", "auto")),
+            )
         artifact = root / "corrections" / f"{safe_name(module)}__{method}__r{maximum_rank}.safetensors"
         atomic_safetensors(artifact, {"left": solved["left"], "right": solved["right"]})
         singular = solved["singular_values"]
@@ -310,7 +335,12 @@ def solve_raw_module(config: Mapping[str, Any], module: str) -> dict[str, Any]:
                     "captured_energy_fraction": capture,
                 }
             )
-        log(root, f"solved {module} {method}", "solve")
+        log(
+            root,
+            f"module={module} completed method={method} method_elapsed={time.time() - method_started:.1f}s "
+            f"progress={progress_status(method_index, len(methods), methods_started)}",
+            "solve",
+        )
         del solved, singular
         gc.collect()
         if torch.cuda.is_available():
@@ -334,7 +364,22 @@ def solve_shard(config: Mapping[str, Any], shard_index: int) -> dict[str, Any]:
         shard = plan["shards"][shard_index]
     except IndexError as error:
         raise ValueError(f"Invalid shard index: {shard_index}") from error
-    completed = [solve_raw_module(config, module) for module in shard["modules"]]
+    modules = [str(module) for module in shard["modules"]]
+    started = time.time()
+    log(root, f"shard={shard_index} solving modules={len(modules)}", "solve")
+    completed = []
+    for index, module in enumerate(modules, 1):
+        log(
+            root,
+            f"shard={shard_index} starting module={module} progress={progress_status(index - 1, len(modules), started)}",
+            "solve",
+        )
+        completed.append(solve_raw_module(config, module))
+        log(
+            root,
+            f"shard={shard_index} completed module={module} progress={progress_status(index, len(modules), started)}",
+            "solve",
+        )
     result = {"status": "PASS", "shard_index": shard_index, "modules": [row["module"] for row in completed]}
     save_json(root / "state" / f"solve_shard_{shard_index:04d}.json", result)
     return result

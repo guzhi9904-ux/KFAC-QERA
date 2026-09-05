@@ -25,8 +25,10 @@ from .utils import (
     deterministic_runtime,
     ensure_layout,
     get_module,
+    heartbeat,
     load_safetensors,
     log,
+    progress_status,
     safe_name,
     save_json,
     sha256_file,
@@ -243,9 +245,13 @@ def collect_shard(config: Mapping[str, Any], shard_index: int) -> dict[str, Any]
             return existing
     shard = _plan_shard(root, shard_index)
     names = [str(name) for name in shard["modules"]]
+    log(root, f"shard={shard_index} loading frozen calibration windows", "collect")
     windows = load_windows(config, "calibration")
     deterministic_runtime(int(config["runtime"]["deterministic_seed"]), bool(config["runtime"].get("allow_tf32", False)))
-    model, _, device = load_model(config, require_input_grads=True)
+    log(root, f"shard={shard_index} loading model={config['model']['name_or_path']}", "collect")
+    with heartbeat(root, f"shard={shard_index} loading model", "collect"):
+        model, _, device = load_model(config, require_input_grads=True)
+    log(root, f"shard={shard_index} model ready device={device}", "collect")
     decoder = base_model(model, config)
     lm_weight = output_embedding(model).weight
     expected_dtype = lm_weight.dtype
@@ -261,6 +267,11 @@ def collect_shard(config: Mapping[str, Any], shard_index: int) -> dict[str, Any]
     log(root, f"collecting shard={shard_index} modules={len(names)} windows={len(windows)}", "collect")
     with collector:
         for index, window in enumerate(windows):
+            log(
+                root,
+                f"shard={shard_index} starting window={index + 1}/{len(windows)} progress={progress_status(index, len(windows), started)}",
+                "collect",
+            )
             ids = window["input_ids"].to(device)
             mask = window["attention_mask"].to(device).bool()
             valid = mask[:, :-1] & mask[:, 1:]
@@ -274,19 +285,20 @@ def collect_shard(config: Mapping[str, Any], shard_index: int) -> dict[str, Any]
                 if device.type == "cuda"
                 else contextlib.nullcontext()
             )
-            with save_context:
-                outputs = decoder(input_ids=ids, attention_mask=mask, use_cache=False, return_dict=True)
-                hidden = outputs.last_hidden_state
-                if collector.forward_seen != set(names):
-                    raise RuntimeError(f"Forward coverage mismatch: missing={set(names) - collector.forward_seen}")
-                gradient, nll, token_count = exact_ce_hidden_gradient(
-                    hidden,
-                    lm_weight,
-                    ids,
-                    mask,
-                    chunk_size=int(config["runtime"]["lm_head_chunk_size"]),
-                )
-                hidden.backward(gradient)
+            with heartbeat(root, f"shard={shard_index} window={index + 1}/{len(windows)} forward-backward", "collect"):
+                with save_context:
+                    outputs = decoder(input_ids=ids, attention_mask=mask, use_cache=False, return_dict=True)
+                    hidden = outputs.last_hidden_state
+                    if collector.forward_seen != set(names):
+                        raise RuntimeError(f"Forward coverage mismatch: missing={set(names) - collector.forward_seen}")
+                    gradient, nll, token_count = exact_ce_hidden_gradient(
+                        hidden,
+                        lm_weight,
+                        ids,
+                        mask,
+                        chunk_size=int(config["runtime"]["lm_head_chunk_size"]),
+                    )
+                    hidden.backward(gradient)
             if collector.gradient_seen != set(names):
                 raise RuntimeError(f"Gradient coverage mismatch: missing={set(names) - collector.gradient_seen}")
             if any(parameter.grad is not None for parameter in model.parameters()):
@@ -294,7 +306,11 @@ def collect_shard(config: Mapping[str, Any], shard_index: int) -> dict[str, Any]
             total_tokens += token_count
             teacher_nll += nll
             collector.active_mask = None
-            log(root, f"shard={shard_index} window={index + 1}/{len(windows)} tokens={token_count}", "collect")
+            log(
+                root,
+                f"shard={shard_index} completed window tokens={token_count} progress={progress_status(index + 1, len(windows), started)}",
+                "collect",
+            )
             del ids, mask, valid, active_mask, outputs, hidden, gradient
             gc.collect()
             if torch.cuda.is_available():

@@ -2,14 +2,26 @@ from __future__ import annotations
 
 import hashlib
 import random
+import time
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 import torch
 
 from .config import output_root
 from .modeling import load_tokenizer
-from .utils import atomic_safetensors, canonical_sha256, ensure_layout, load_safetensors, save_json, sha256_file, tensor_sha256, utc_now
+from .utils import (
+    atomic_safetensors,
+    canonical_sha256,
+    ensure_layout,
+    heartbeat,
+    load_safetensors,
+    log,
+    save_json,
+    sha256_file,
+    tensor_sha256,
+    utc_now,
+)
 
 
 def _load_source(spec: Mapping[str, Any]) -> tuple[Any, dict[str, Any]]:
@@ -45,7 +57,14 @@ def _iter_text(dataset: Any, column: str) -> Iterable[tuple[int, str]]:
             yield index, text
 
 
-def _token_stream(dataset: Any, tokenizer: Any, spec: Mapping[str, Any], *, required: int | None) -> tuple[torch.Tensor, list[dict[str, Any]]]:
+def _token_stream(
+    dataset: Any,
+    tokenizer: Any,
+    spec: Mapping[str, Any],
+    *,
+    required: int | None,
+    progress: Callable[[int, int], None] | None = None,
+) -> tuple[torch.Tensor, list[dict[str, Any]]]:
     separator = tokenizer(
         str(spec.get("separator", "\n\n")),
         add_special_tokens=False,
@@ -74,6 +93,8 @@ def _token_stream(dataset: Any, tokenizer: Any, spec: Mapping[str, Any], *, requ
                 "tokens": len(encoded),
             }
         )
+        if progress is not None and (len(rows) == 1 or len(rows) % 1000 == 0):
+            progress(len(rows), len(tokens))
         if required is not None and len(tokens) >= required:
             break
     if required is not None and len(tokens) < required:
@@ -117,7 +138,11 @@ def prepare_role(config: Mapping[str, Any], role: str) -> dict[str, Any]:
     if role not in config["data"]:
         raise KeyError(f"Unknown data role: {role}")
     spec = config["data"][role]
-    dataset, provenance = _load_source(spec)
+    started = time.time()
+    log(root, f"role={role} loading dataset source", "data")
+    with heartbeat(root, f"role={role} loading dataset source", "data"):
+        dataset, provenance = _load_source(spec)
+    log(root, f"role={role} dataset ready; loading tokenizer", "data")
     if isinstance(dataset, IterableDataset) and spec.get("shuffle_buffer_size"):
         dataset = dataset.shuffle(seed=int(spec.get("seed", 0)), buffer_size=int(spec["shuffle_buffer_size"]))
     length = int(spec["sequence_length"])
@@ -126,8 +151,20 @@ def prepare_role(config: Mapping[str, Any], role: str) -> dict[str, Any]:
     # Random non-overlapping blocks must be sampled from the complete finite
     # split, not only from a prefix with exactly the requested token count.
     required = None if requested == "all" or sampling == "random_blocks" else int(requested) * length
-    tokenizer = load_tokenizer(config)
-    stream, source_rows = _token_stream(dataset, tokenizer, spec, required=required)
+    with heartbeat(root, f"role={role} loading tokenizer", "data"):
+        tokenizer = load_tokenizer(config)
+    log(root, f"role={role} tokenization started required_tokens={required if required is not None else 'complete split'}", "data")
+
+    def report(source_row_count: int, token_count: int) -> None:
+        log(
+            root,
+            f"role={role} tokenizing rows={source_row_count} tokens={token_count} elapsed={time.time() - started:.1f}s",
+            "data",
+        )
+
+    with heartbeat(root, f"role={role} tokenizing", "data"):
+        stream, source_rows = _token_stream(dataset, tokenizer, spec, required=required, progress=report)
+    log(root, f"role={role} tokenization complete rows={len(source_rows)} tokens={stream.numel()}", "data")
     ids, window_rows = _windowize(stream, spec)
     mask = torch.ones_like(ids)
     artifact = root / "data" / f"{role}.safetensors"
@@ -157,6 +194,7 @@ def prepare_role(config: Mapping[str, Any], role: str) -> dict[str, Any]:
         "windows_manifest": window_rows,
     }
     save_json(root / "data" / f"{role}_manifest.json", manifest)
+    log(root, f"role={role} saved windows={ids.shape[0]} elapsed={time.time() - started:.1f}s", "data")
     return manifest
 
 

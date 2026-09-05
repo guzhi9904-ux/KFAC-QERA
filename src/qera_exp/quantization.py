@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gc
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -17,8 +18,10 @@ from .utils import (
     deterministic_runtime,
     ensure_layout,
     get_module,
+    heartbeat,
     load_safetensors,
     log,
+    progress_status,
     safe_name,
     save_csv,
     save_json,
@@ -86,14 +89,19 @@ def quantize_model(config: Mapping[str, Any]) -> dict[str, Any]:
     root = output_root(config)
     ensure_layout(root)
     deterministic_runtime(int(config["runtime"]["deterministic_seed"]), bool(config["runtime"].get("allow_tf32", False)))
-    model, _, _ = load_model(config, require_input_grads=False)
+    started = time.time()
+    log(root, f"loading model={config['model']['name_or_path']} for quantization", "quantize")
+    with heartbeat(root, "loading model for quantization", "quantize"):
+        model, _, _ = load_model(config, require_input_grads=False)
     names = discover_target_modules(model, config)
+    log(root, f"model ready; discovered target_modules={len(names)}", "quantize")
     manifest_rows = module_manifest(model, names)
     save_csv(root / "module_manifest.csv", manifest_rows)
     save_json(root / "module_manifest.json", {"modules": manifest_rows, "module_count": len(manifest_rows)})
     block_size = int(config["quantization"]["block_size"])
     quant_rows: list[dict[str, Any]] = []
     for index, name in enumerate(names, 1):
+        log(root, f"starting module={name} progress={progress_status(index - 1, len(names), started)}", "quantize")
         module = get_module(model, name)
         reference_bf16 = module.weight.detach().cpu().to(torch.bfloat16).contiguous()
         reference_fp32 = reference_bf16.float().contiguous()
@@ -143,7 +151,7 @@ def quantize_model(config: Mapping[str, Any]) -> dict[str, Any]:
             metadata["artifact_sha256"] = sha256_file(artifact)
             save_json(metadata_path, metadata)
         quant_rows.append({**metadata, "artifact": str(artifact), "metadata": str(metadata_path)})
-        log(root, f"quantized {index}/{len(names)} {name}", "quantize")
+        log(root, f"completed module={name} progress={progress_status(index, len(names), started)}", "quantize")
         del reference_bf16, reference_fp32, rebuilt
         if index % 7 == 0:
             gc.collect()
