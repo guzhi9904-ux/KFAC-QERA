@@ -1,0 +1,21 @@
+{
+  "commit": "bd7fc86a2e44d41f95b9b0421f27f5624dd37064",
+  "working_tree_clean": true,
+  "files": [
+    {
+      "path": "QERA/src/qera/quantize/quantizers/mxint.py",
+      "size_bytes": 7291,
+      "sha256": "0d03b3162405b20971218e21e7d3f7d1aba777b9a90e6fb9e4d75af2f5d6c4a3"
+    },
+    {
+      "path": "QERA/src/qera/approximate.py",
+      "size_bytes": 5967,
+      "sha256": "3833382bb6c6233c392687d4856bac28a92a2e88df2e3bd86e8d86692fde1c98"
+    },
+    {
+      "path": "QERA/experiments/configs/w-only-uniform-rank.yaml",
+      "size_bytes": 2035,
+      "sha256": "3d8fd2d95d82881caf525dab7e90c8cfe08e4c1a3bdb302126fb7a6d15f6ea6f"
+    }
+  ]
+}

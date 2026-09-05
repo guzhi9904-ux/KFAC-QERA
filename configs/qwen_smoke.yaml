@@ -1,0 +1,22 @@
+extends: base.yaml
+
+experiment:
+  name: qwen_smoke
+
+model:
+  layers: [0, 1]
+
+data:
+  calibration:
+    windows: 8
+  wikitext2:
+    windows: 8
+  c4:
+    windows: 8
+
+statistics:
+  ranks: [8, 16]
+  maximum_rank: 16
+
+runtime:
+  max_dense_ram_gib_per_shard: 12

@@ -1,0 +1,34 @@
+{
+  "captured_at_utc": "2026-09-04T13:32:27.872325+00:00",
+  "python": "3.10.20",
+  "python_executable": "<conda-env>/python",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "processor": "Intel64 Family 6 Model 158 Stepping 12, GenuineIntel",
+  "cpu_logical": 16,
+  "cpu_physical": 8,
+  "ram_total_bytes": 68581646336,
+  "ram_available_bytes": 37325443072,
+  "disk_total_bytes": 475898310656,
+  "disk_free_bytes": 173749207040,
+  "torch": "2.5.1",
+  "transformers": "4.44.0",
+  "datasets": "3.4.0",
+  "scipy": "1.15.3",
+  "safetensors": "0.7.0",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 3060 Ti",
+    "total_vram_bytes": 8589279232,
+    "free_vram_bytes": 7474249728,
+    "cuda_runtime": "12.1"
+  },
+  "nvidia_smi": {
+    "command": [
+      "nvidia-smi",
+      "--query-gpu=driver_version,name,memory.total,memory.free",
+      "--format=csv,noheader"
+    ],
+    "returncode": 0,
+    "stdout": "560.94, NVIDIA GeForce RTX 3060 Ti, 8192 MiB, 6563 MiB\n",
+    "stderr": ""
+  }
+}

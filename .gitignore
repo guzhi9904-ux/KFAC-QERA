@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+hf_token*
+token.txt
+.huggingface/
+credentials*
+
+# Experiment products (keep only compact, reviewed files in reference_results/)
+runs/
+data/
+cache/
+checkpoints/
+wandb/
+logs/
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.arrow
+*.parquet
+*.npy
+*.npz
+*.jsonl
+
+# Model repositories accidentally copied into this repository
+modelzoo/
+models/
+snapshots/
+
+# Build outputs
+build/
+dist/
+*.egg-info/

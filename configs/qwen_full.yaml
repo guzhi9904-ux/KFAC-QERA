@@ -1,0 +1,7 @@
+extends: base.yaml
+
+experiment:
+  name: qwen_full
+
+model:
+  layers: all

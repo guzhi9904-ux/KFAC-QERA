@@ -1,0 +1,7 @@
+extends: llama3_full.yaml
+
+experiment:
+  name: llama3_full_cholesky
+
+statistics:
+  root_method: cholesky

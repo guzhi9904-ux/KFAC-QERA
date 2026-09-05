@@ -1,0 +1,12 @@
+extends: base.yaml
+
+experiment:
+  name: llama3_full
+
+model:
+  layers: all
+
+# Llama-3 8B contains 14k-wide MLP projections. If FP64 eigendecomposition is
+# too slow, change root_method to cholesky after completing the smoke run.
+runtime:
+  max_dense_ram_gib_per_shard: 16

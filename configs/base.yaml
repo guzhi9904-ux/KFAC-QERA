@@ -1,0 +1,94 @@
+schema_version: 1
+
+experiment:
+  name: mxint4_full_ag
+  output_dir: ${RUN_DIR}
+
+model:
+  name_or_path: ${MODEL_PATH}
+  revision: null
+  local_files_only: true
+  trust_remote_code: false
+  dtype: bfloat16
+  device: cuda:0
+  attention_implementation: eager
+  base_model_attribute: model
+  target_suffixes:
+    - self_attn.q_proj
+    - self_attn.k_proj
+    - self_attn.v_proj
+    - self_attn.o_proj
+    - mlp.gate_proj
+    - mlp.up_proj
+    - mlp.down_proj
+  layers: all
+
+quantization:
+  format: mxint
+  width: 4
+  block_size: 32
+  block_axis: -1
+
+data:
+  calibration:
+    dataset: Salesforce/wikitext
+    subset: wikitext-2-raw-v1
+    split: train
+    local_path: null
+    streaming: false
+    text_column: text
+    separator: "\n\n"
+    sampling: random_blocks
+    windows: 256
+    sequence_length: 2048
+    seed: 20260903
+  wikitext2:
+    dataset: Salesforce/wikitext
+    subset: wikitext-2-raw-v1
+    split: test
+    local_path: null
+    streaming: false
+    text_column: text
+    separator: "\n\n"
+    sampling: prefix
+    windows: all
+    sequence_length: 2048
+    seed: 20260903
+  c4:
+    dataset: allenai/c4
+    subset: en
+    split: validation
+    local_path: null
+    streaming: true
+    shuffle_buffer_size: 10000
+    text_column: text
+    separator: "\n\n"
+    sampling: stream
+    windows: 32
+    sequence_length: 2048
+    seed: 20260917
+
+statistics:
+  methods: [AD_GI, AD_GD, AD_GF, AF_GI, AF_GD, AF_GF]
+  ranks: [8, 16, 32, 64]
+  maximum_rank: 64
+  lambda_a: 1.0e-4
+  lambda_g: 1.0e-4
+  root_method: eigh
+  solve_device: cuda
+  gram_token_chunk_size: 64
+  negative_eigen_relative_tolerance: 1.0e-6
+
+runtime:
+  deterministic_seed: 20261207
+  allow_tf32: false
+  lm_head_chunk_size: 128
+  max_dense_ram_gib_per_shard: 24
+  cleanup_raw_after_solve: true
+
+analysis:
+  chart_dpi: 180
+  focused_axis_margin_fraction: 0.08
+  y_limits:
+    wikitext2: null
+    c4: null

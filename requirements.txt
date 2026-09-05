@@ -1,0 +1,10 @@
+torch>=2.3
+transformers>=4.44
+accelerate>=0.33
+datasets>=3.0
+safetensors>=0.4
+PyYAML>=6.0
+numpy>=1.26
+pandas>=2.1
+matplotlib>=3.8
+psutil>=5.9
