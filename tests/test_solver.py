@@ -37,6 +37,14 @@ def test_weighted_solver_reduces_objective(root_method: str) -> None:
         assert result["objective_after"] <= result["objective_before"]
         assert result["left"].dtype == torch.bfloat16
         assert result["right"].dtype == torch.bfloat16
+        assert result["storage_drift_tolerance"] == 1e-2
+
+
+def test_weighted_solver_rejects_invalid_storage_drift_tolerance() -> None:
+    error = torch.eye(2, dtype=torch.float64)
+    identity = Metric("I", 2)
+    with pytest.raises(ValueError, match="finite and positive"):
+        solve_weighted(error, identity, identity, rank=1, device="cpu", storage_drift_tolerance=0.0)
 
 
 def test_completed_module_state_validates_resume_artifacts(tmp_path: Path) -> None:

@@ -181,7 +181,17 @@ def _unmap_right_factor(metric: Metric, value: torch.Tensor) -> torch.Tensor:
     return metric.right_inverse.unsqueeze(1) * value if metric.right_inverse.ndim == 1 else metric.right_inverse.T @ value
 
 
-def solve_weighted(error: torch.Tensor, a: Metric, g: Metric, rank: int, device: str = "auto") -> dict[str, Any]:
+def solve_weighted(
+    error: torch.Tensor,
+    a: Metric,
+    g: Metric,
+    rank: int,
+    device: str = "auto",
+    *,
+    storage_drift_tolerance: float = 1e-2,
+) -> dict[str, Any]:
+    if not math.isfinite(storage_drift_tolerance) or storage_drift_tolerance <= 0:
+        raise ValueError("storage_drift_tolerance must be finite and positive")
     error = error.detach().cpu().double().contiguous()
     if error.shape != (g.dimension, a.dimension) or rank > min(error.shape):
         raise ValueError("Error/metric/rank shape mismatch")
@@ -208,9 +218,11 @@ def solve_weighted(error: torch.Tensor, a: Metric, g: Metric, rank: int, device:
     storage_drift = _relative(left_bf16.double() @ right_bf16.double().T, correction)
     before = float(transformed.square().sum().item())
     after = float((transformed - target_rank).square().sum().item())
-    if mapped_residual > 1e-6 or storage_drift > 5e-3 or after > before * (1 + 1e-6):
+    if mapped_residual > 1e-6 or storage_drift > storage_drift_tolerance or after > before * (1 + 1e-6):
         raise RuntimeError(
-            f"Weighted solve gate failed: mapped={mapped_residual}, storage={storage_drift}, before={before}, after={after}"
+            "Weighted solve gate failed: "
+            f"mapped={mapped_residual}, storage={storage_drift}, "
+            f"storage_tolerance={storage_drift_tolerance}, before={before}, after={after}"
         )
     return {
         "left": left_bf16,
@@ -220,6 +232,7 @@ def solve_weighted(error: torch.Tensor, a: Metric, g: Metric, rank: int, device:
         "objective_after": after,
         "mapped_back_relative_residual": mapped_residual,
         "stored_bf16_relative_drift": storage_drift,
+        "storage_drift_tolerance": storage_drift_tolerance,
     }
 
 
@@ -344,6 +357,7 @@ def solve_raw_module(config: Mapping[str, Any], module: str) -> dict[str, Any]:
                 g_metric,
                 maximum_rank,
                 str(statistics.get("solve_device", "auto")),
+                storage_drift_tolerance=float(statistics.get("storage_drift_tolerance", 1e-2)),
             )
         artifact = root / "corrections" / f"{safe_name(module)}__{method}__r{maximum_rank}.safetensors"
         atomic_safetensors(artifact, {"left": solved["left"], "right": solved["right"]})
@@ -369,6 +383,7 @@ def solve_raw_module(config: Mapping[str, Any], module: str) -> dict[str, Any]:
             "objective_after": solved["objective_after"],
             "mapped_back_relative_residual": solved["mapped_back_relative_residual"],
             "stored_bf16_relative_drift": solved["stored_bf16_relative_drift"],
+            "storage_drift_tolerance": solved["storage_drift_tolerance"],
             "rank_energy_capture": captures,
         }
         save_json(artifact.with_suffix(".json"), row)
