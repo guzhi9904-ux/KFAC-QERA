@@ -18,7 +18,11 @@ from qera_original_a_isolation.common import (  # noqa: E402
     sha256_source_file,
     validate_config,
 )
-from qera_original_a_isolation.pipeline import _groups_from_config, _read_jsonl  # noqa: E402
+from qera_original_a_isolation.pipeline import (  # noqa: E402
+    _groups_from_config,
+    _read_jsonl,
+    _take_streaming_rows,
+)
 
 
 class ProjectionBlock(torch.nn.Module):
@@ -102,3 +106,10 @@ def test_source_hash_normalizes_line_endings(tmp_path: Path) -> None:
     lf.write_bytes(b"x = 1\ny = 2\n")
     crlf.write_bytes(b"x = 1\r\ny = 2\r\n")
     assert sha256_source_file(lf) == sha256_source_file(crlf)
+
+
+def test_streaming_prefix_stops_at_requested_rows() -> None:
+    stream = ({"text": f"row-{index}", "meta": {"index": index}} for index in range(10))
+    rows, digest = _take_streaming_rows(stream, 4)
+    assert [row["text"] for row in rows] == ["row-0", "row-1", "row-2", "row-3"]
+    assert len(digest) == 64

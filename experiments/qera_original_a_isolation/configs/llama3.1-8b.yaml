@@ -10,6 +10,9 @@ num_calibration_samples: 256
 num_workers: 8
 calibration_batch_size: 4
 eval_batch_size: 4
+calibration_acquisition: streaming_prefix
+slimpajama_dataset: DKYoon/SlimPajama-6B
+slimpajama_revision: main
 
 quantization:
   name: mxint

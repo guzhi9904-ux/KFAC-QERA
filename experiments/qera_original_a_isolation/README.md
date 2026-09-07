@@ -39,7 +39,8 @@ Full-A 与 Diag-A 的唯一区别是 `S` 是否保留 `Rxx` 的非对角项；�
 | 项目 | 本实验 |
 |---|---|
 | 官方源码 | `ChengZhang-98/QERA@bd7fc86a2e44d41f95b9b0421f27f5624dd37064` |
-| 校准集 | `DKYoon/SlimPajama-6B`，官方预处理后的前 256 个窗口 |
+| 校准集 | `DKYoon/SlimPajama-6B` 前 5120 条原始文本，官方预处理后的前 256 个窗口 |
+| 数据获取 | 锁定实际 dataset revision，streaming 读取固定前缀 |
 | 序列长度 | 2048 |
 | 校准 / PPL batch size | 4 / 4 |
 | 评测集 | `Salesforce/wikitext` / `wikitext-2-raw-v1` test |
@@ -79,7 +80,9 @@ python experiments/qera_original_a_isolation/run.py \
   prepare-data --allow-download
 ```
 
-官方 `DKYoon/SlimPajama-6B` 数据集约需十几 GB 下载空间。此步骤沿用官方代码的 `20 × 256` 原始样本截取和拼接/分块逻辑，最后保存精确的 256 个校准窗口及 SHA-256。完成后实验不再依赖数据网络。
+此步骤不会下载完整的 48 个 SlimPajama 分片。它先解析并记录 Hugging Face dataset revision，再按数据集顺序 streaming 读取官方使用的前 `20 × 256 = 5120` 条原始文本，随后直接调用官方 QERA 的拼接、tokenize 和 2048-token 分块函数，最后保存前 256 个校准窗口、原始文本前缀哈希和 token 文件 SHA-256。通常只需读取第一个数据分片；完成后实验不再依赖数据网络。
+
+该优化保持校准文本及预处理定义不变，但数据获取入口不是官方非流式 `load_dataset` 全量下载路径。因此结果应标为“官方数据前缀与预处理对齐”，而不是“未经改动的官方数据加载入口复现”。
 
 ## 审查与运行
 

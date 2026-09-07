@@ -125,6 +125,7 @@ def import_official_qera(config: dict[str, Any]) -> dict[str, Any]:
         "commit": actual,
         "compute_ab": approximate._compute_scales_and_error_for_fc,
         "get_data_module": datasets.get_data_module,
+        "preprocess_data_module": datasets.preprocess_data_module,
         "mxint_quantizer": mxint.mxint_quantizer,
         "sqrtm_scipy": scale.sqrtm_scipy,
     }
@@ -220,6 +221,8 @@ def validate_config(config: dict[str, Any]) -> None:
             raise ValueError(f"{key} must be positive")
     if int(config["checkpoint_every_windows"]) % int(config["calibration_batch_size"]) != 0:
         raise ValueError("checkpoint_every_windows must be divisible by calibration_batch_size")
+    if config.get("calibration_acquisition", "official_full") not in ("official_full", "streaming_prefix"):
+        raise ValueError("calibration_acquisition must be official_full or streaming_prefix")
     quant = config["quantization"]
     if quant != {"name": "mxint", "width": 4, "block_size": 32, "block_axis": -1}:
         raise ValueError("Source-aligned quantization must be MXINT4, block_size=32, block_axis=-1")

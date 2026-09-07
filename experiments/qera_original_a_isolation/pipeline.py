@@ -50,6 +50,54 @@ def frozen_path(config: dict[str, Any], role: str) -> Path:
     return run_dir(config) / "data" / f"{role}.safetensors"
 
 
+def _take_streaming_rows(stream, count: int) -> tuple[list[dict[str, Any]], str]:
+    rows: list[dict[str, Any]] = []
+    digest = hashlib.sha256()
+    for row in stream:
+        text = row["text"]
+        payload = text.encode("utf-8")
+        digest.update(len(payload).to_bytes(8, byteorder="little"))
+        digest.update(payload)
+        rows.append(row)
+        if len(rows) % 128 == 0 or len(rows) == count:
+            log("data", f"streamed SlimPajama raw rows={len(rows)}/{count}")
+        if len(rows) == count:
+            break
+    if len(rows) != count:
+        raise RuntimeError(f"SlimPajama stream ended after {len(rows)}/{count} rows")
+    return rows, digest.hexdigest()
+
+
+def _load_streaming_slimpajama_prefix(config: dict[str, Any], count: int):
+    import datasets as hf_datasets
+    from huggingface_hub import HfApi
+
+    dataset_id = config.get("slimpajama_dataset", "DKYoon/SlimPajama-6B")
+    requested_revision = config.get("slimpajama_revision", "main")
+    resolved_revision = HfApi().dataset_info(dataset_id, revision=requested_revision).sha
+    log(
+        "data",
+        f"streaming dataset={dataset_id} revision={resolved_revision} raw_prefix_rows={count}",
+    )
+    stream = hf_datasets.load_dataset(
+        dataset_id,
+        split="train",
+        streaming=True,
+        revision=resolved_revision,
+    )
+    rows, text_sha256 = _take_streaming_rows(stream, count)
+    raw = hf_datasets.DatasetDict({"train": hf_datasets.Dataset.from_list(rows)})
+    provenance = {
+        "acquisition_mode": "streaming_prefix",
+        "dataset_id": dataset_id,
+        "requested_revision": requested_revision,
+        "resolved_revision": resolved_revision,
+        "raw_prefix_rows": count,
+        "raw_text_sha256": text_sha256,
+    }
+    return raw, provenance
+
+
 def prepare_data(config: dict[str, Any], roles: Iterable[str], allow_download: bool) -> dict[str, Any]:
     offline_variables = ("HF_HUB_OFFLINE", "HF_DATASETS_OFFLINE", "TRANSFORMERS_OFFLINE")
     if allow_download:
@@ -66,12 +114,18 @@ def prepare_data(config: dict[str, Any], roles: Iterable[str], allow_download: b
     outputs: dict[str, Any] = {}
     for role in roles:
         path = frozen_path(config, role)
+        acquisition_mode = (
+            config.get("calibration_acquisition", "official_full")
+            if role == "calibration"
+            else "official_cached_or_downloaded"
+        )
         if path.exists():
             manifest = load_json(path.with_suffix(".json"))
             expected = {
                 "model_path": config["model_path"],
                 "sequence_length": int(config["sequence_length"]),
                 "qera_commit": qera["commit"],
+                "acquisition_mode": acquisition_mode,
             }
             actual = {key: manifest.get(key) for key in expected}
             if actual != expected or manifest.get("sha256") != sha256_file(path):
@@ -91,15 +145,28 @@ def prepare_data(config: dict[str, Any], roles: Iterable[str], allow_download: b
             raw_limit = None
         else:
             raise ValueError(f"Unknown data role: {role}")
-        log("data", f"loading official QERA dataset={dataset_name} allow_download={allow_download}")
-        module = qera["get_data_module"](
-            name=dataset_name,
-            tokenizer=tokenizer,
-            padding="max_length",
-            max_length=int(config["sequence_length"]),
-            num_workers=int(config["num_workers"]),
-            num_raw_samples=raw_limit,
-        )
+        log("data", f"loading QERA dataset={dataset_name} acquisition={acquisition_mode}")
+        data_provenance: dict[str, Any] = {"acquisition_mode": acquisition_mode}
+        if role == "calibration" and acquisition_mode == "streaming_prefix":
+            raw_module, stream_provenance = _load_streaming_slimpajama_prefix(config, raw_limit)
+            data_provenance.update(stream_provenance)
+            module = qera["preprocess_data_module"](
+                raw_module,
+                dataset_name,
+                tokenizer=tokenizer,
+                padding="max_length",
+                max_length=int(config["sequence_length"]),
+                num_proc=int(config["num_workers"]),
+            )
+        else:
+            module = qera["get_data_module"](
+                name=dataset_name,
+                tokenizer=tokenizer,
+                padding="max_length",
+                max_length=int(config["sequence_length"]),
+                num_workers=int(config["num_workers"]),
+                num_raw_samples=raw_limit,
+            )
         dataset = module[split]
         count = len(dataset) if limit is None else min(limit, len(dataset))
         if limit is not None and count != limit:
@@ -121,6 +188,7 @@ def prepare_data(config: dict[str, Any], roles: Iterable[str], allow_download: b
             "qera_commit": qera["commit"],
             "tensor_file": str(path),
             "sha256": sha256_file(path),
+            **data_provenance,
         }
         save_json(path.with_suffix(".json"), manifest)
         outputs[role] = manifest
