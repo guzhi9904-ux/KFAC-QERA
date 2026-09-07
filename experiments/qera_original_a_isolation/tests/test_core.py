@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
@@ -21,6 +22,7 @@ from qera_original_a_isolation.common import (  # noqa: E402
 from qera_original_a_isolation.pipeline import (  # noqa: E402
     _groups_from_config,
     _read_jsonl,
+    _real_sqrtm_root,
     _take_streaming_rows,
 )
 
@@ -113,3 +115,11 @@ def test_streaming_prefix_stops_at_requested_rows() -> None:
     rows, digest = _take_streaming_rows(stream, 4)
     assert [row["text"] for row in rows] == ["row-0", "row-1", "row-2", "row-3"]
     assert len(digest) == 64
+
+
+def test_complex_sqrtm_matches_official_real_cast_and_normalization() -> None:
+    root = np.array([[4.0 + 0.5j, 0.0], [0.0, 2.0 - 0.25j]], dtype=np.complex128)
+    real_root, raw_imaginary, normalized_imaginary = _real_sqrtm_root(root, 4)
+    np.testing.assert_allclose(real_root, np.diag([2.0, 1.0]))
+    assert raw_imaginary == pytest.approx(0.5)
+    assert normalized_imaginary == pytest.approx(0.25)

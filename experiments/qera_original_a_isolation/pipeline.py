@@ -46,6 +46,24 @@ def atomic_safetensors(path: Path, tensors: dict[str, torch.Tensor]) -> None:
     os.replace(temporary, path)
 
 
+def _real_sqrtm_root(
+    root: np.ndarray, sample_count: int
+) -> tuple[np.ndarray, float, float]:
+    """Match official QERA's complex-to-real cast and retain diagnostics.
+
+    SciPy may return a complex square root for a numerically near-PSD matrix.
+    Official QERA converts that result to a real floating tensor, which drops
+    the imaginary component, before applying the sample-count normalization.
+    """
+    if sample_count <= 0:
+        raise ValueError("sample_count must be positive")
+    max_imaginary_raw = float(np.max(np.abs(root.imag))) if np.iscomplexobj(root) else 0.0
+    normalizer = math.sqrt(sample_count)
+    max_imaginary_normalized = max_imaginary_raw / normalizer
+    real_root = np.asarray(np.real(root), dtype=np.float64) / normalizer
+    return real_root, max_imaginary_raw, max_imaginary_normalized
+
+
 def frozen_path(config: dict[str, Any], role: str) -> Path:
     return run_dir(config) / "data" / f"{role}.safetensors"
 
@@ -496,13 +514,21 @@ def compute_roots(config: dict[str, Any], shard: int) -> dict[str, Any]:
         rxx_sum = (rxx_sum + rxx_sum.T) * 0.5
         log("roots", f"shard={shard} group={group.target} sqrtm dimension={group.in_features} ({index}/{len(groups)})")
         root = qera["sqrtm_scipy"](rxx_sum)
-        max_imaginary = float(np.max(np.abs(root.imag))) if np.iscomplexobj(root) else 0.0
-        if max_imaginary > float(config["sqrtm_max_imaginary"]):
-            raise RuntimeError(f"sqrtm produced complex result for {group.target}: max_imaginary={max_imaginary}")
-        root = np.real(root) / math.sqrt(n)
+        root, max_imaginary_raw, max_imaginary_normalized = _real_sqrtm_root(root, n)
+        warning_threshold = float(config["sqrtm_max_imaginary"])
+        if max_imaginary_raw > warning_threshold:
+            log(
+                "roots",
+                f"shard={shard} group={group.target} sqrtm complex diagnostic "
+                f"raw_max_imaginary={max_imaginary_raw:.6g} "
+                f"normalized_max_imaginary={max_imaginary_normalized:.6g}; "
+                "discarding imaginary component to match official QERA float cast",
+            )
         covariance = rxx_sum / n
         denominator = max(float(np.linalg.norm(covariance)), np.finfo(np.float64).eps)
         residual = float(np.linalg.norm(root @ root - covariance) / denominator)
+        if not math.isfinite(residual):
+            raise RuntimeError(f"Non-finite sqrtm residual for {group.target}: {residual}")
         diag_scale = torch.sqrt(torch.clamp(tensors["diag_sum"] / n, min=0)).to(torch.float32)
         full_scale = torch.from_numpy(root).to(torch.float32)
         atomic_safetensors(output, {"full": full_scale, "diag": diag_scale})
@@ -518,8 +544,12 @@ def compute_roots(config: dict[str, Any], shard: int) -> dict[str, Any]:
                 "full_root_dtype": "float32",
                 "diag_root_dtype": "float32",
                 "sqrtm_implementation": "official_qera_scipy_blocked",
+                "sqrtm_complex_policy": "discard_imaginary_like_official_float_cast",
                 "sqrtm_relative_residual": residual,
-                "sqrtm_max_imaginary": max_imaginary,
+                "sqrtm_max_imaginary": max_imaginary_raw,
+                "sqrtm_max_imaginary_raw": max_imaginary_raw,
+                "sqrtm_max_imaginary_normalized": max_imaginary_normalized,
+                "sqrtm_imaginary_warning_threshold_raw": warning_threshold,
                 "raw_sha256": sha256_file(raw_path),
                 "root_sha256": sha256_file(output),
             },

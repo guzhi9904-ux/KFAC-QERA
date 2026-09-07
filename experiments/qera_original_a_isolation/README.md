@@ -45,7 +45,7 @@ Full-A 与 Diag-A 的唯一区别是 `S` 是否保留 `Rxx` 的非对角项；�
 | 校准 / PPL batch size | 4 / 4 |
 | 评测集 | `Salesforce/wikitext` / `wikitext-2-raw-v1` test |
 | 权重量化 | 官方 `mxint_quantizer(width=4, block_size=32, block_axis=-1)` |
-| Full-A 平方根 | 官方 SciPy blocked `sqrtm` 路径，FP64 |
+| Full-A 平方根 | 官方 SciPy blocked `sqrtm` 路径，FP64；复数结果按官方 float cast 语义丢弃虚部并记录诊断 |
 | Full-A 外积 / 累加 | FP32 / FP64 |
 | Diag-A 平方和 / 累加 | FP32 / FP32（官方 diagonal 路径） |
 | 求解 | 官方 `_compute_scales_and_error_for_fc`，FP32 |
