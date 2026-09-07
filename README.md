@@ -29,6 +29,10 @@ tests/                    不加载大模型的单元测试
 
 模型权重、token 缓存、A/G 矩阵、低秩因子和逐窗口评测结果默认写到 `RUN_DIR`，并被 `.gitignore` 排除。raw A/G 默认保留，用于审计、归档和受控的后续求解。
 
+## 附加隔离实验
+
+不含 G、严格区分 Full-A 与 Diag-A，并对齐官方 QERA 校准集和求解器的 rank 8/16/32/64 实验位于 [experiments/qera_original_a_isolation](experiments/qera_original_a_isolation/README.md)。该目录有独立环境、配置、断点和运行脚本，不修改原 2×3 A/G 实验实现。
+
 ## 安装
 
 ```bash

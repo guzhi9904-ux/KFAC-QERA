@@ -1,0 +1,26 @@
+# Practical 4090 sensitivity run. The only departure from the primary config is
+# BF16 model forward during activation collection; outer products remain FP32
+# and accumulators remain FP64.
+model_path: /share/home/tm902089733300000/a913520780/chengkang/modelzoo/Meta-Llama-3.1-8B
+qera_source_dir: /share/home/tm902089733300000/a913520780/chengkang/QERA-official-bd7fc86
+official_qera_commit: bd7fc86a2e44d41f95b9b0421f27f5624dd37064
+run_dir: /share/home/tm902089733300000/a913520780/chengkang/qera_runs/llama3.1-8b-original-a-isolation-bf16-profile
+
+ranks: [8, 16, 32, 64]
+sequence_length: 2048
+num_calibration_samples: 256
+num_workers: 8
+calibration_batch_size: 1
+eval_batch_size: 1
+quantization: {name: mxint, width: 4, block_size: 32, block_axis: -1}
+
+profiling_dtype: bfloat16
+profiling_device_map: auto
+solve_dtype: float32
+solve_device: cuda:0
+eval_dtype: bfloat16
+eval_device_map: auto
+max_memory: {"0": 21GiB, cpu: 900GiB}
+groups_per_shard: 24
+checkpoint_every_windows: 32
+sqrtm_max_imaginary: 1.0e-6
