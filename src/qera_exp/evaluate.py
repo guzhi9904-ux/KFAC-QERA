@@ -63,7 +63,7 @@ def _module_names(root: Path) -> list[str]:
 
 def install_quantized_weights(model: torch.nn.Module, root: Path, names: list[str]) -> str:
     rows = []
-    configuration_started = time.time()
+    started = time.time()
     with torch.no_grad():
         for index, name in enumerate(names, 1):
             module = get_module(model, name)
@@ -168,7 +168,7 @@ def _evaluate_configuration(
             log(
                 root,
                 f"{role} configuration={row['configuration']} cached "
-                f"progress={progress_status(index, len(windows), configuration_started)}",
+                f"progress={progress_status(index, len(windows), started)}",
                 "evaluate",
             )
             continue
@@ -200,7 +200,7 @@ def _evaluate_configuration(
         log(
             root,
             f"{role} configuration={row['configuration']} nll={nll/token_count:.8f} "
-            f"progress={progress_status(index, len(windows), configuration_started)}",
+            f"progress={progress_status(index, len(windows), started)}",
             "evaluate",
         )
 
