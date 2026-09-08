@@ -700,7 +700,44 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return records
 
 
-def _evaluate_one(config: dict[str, Any], name: str, method: str | None, rank: int | None, windows):
+def _chunked_window_nll(logits, ids, mask, chunk_tokens: int):
+    """Keep full-vocabulary CE and the original per-window reduction order.
+
+    Slice token rows before CE, avoiding the full shifted-logits copy and
+    full-batch log-softmax workspace. The vocabulary is never split.
+    """
+    if chunk_tokens <= 0:
+        raise ValueError("ce_chunk_tokens must be positive")
+    labels = ids[:, 1:].to(logits.device)
+    valid = mask[:, 1:].to(logits.device).bool()
+    losses = torch.empty(labels.shape, dtype=logits.dtype, device=logits.device)
+    for row in range(labels.shape[0]):
+        for start in range(0, labels.shape[1], chunk_tokens):
+            end = min(start + chunk_tokens, labels.shape[1])
+            losses[row, start:end] = F.cross_entropy(
+                logits[row, start:end, :], labels[row, start:end], reduction="none"
+            )
+    return [
+        (float(losses[row][valid[row]].sum().item()), int(valid[row].sum().item()))
+        for row in range(labels.shape[0])
+    ]
+
+
+def _evaluation_load_config(config: dict[str, Any], dual_gpu: bool) -> dict[str, Any]:
+    # Do not change fields participating in the original experiment fingerprint.
+    loading = dict(config)
+    if dual_gpu:
+        if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
+            raise RuntimeError("--dual-gpu requires two visible CUDA GPUs")
+        loading["max_memory"] = {0: "10GiB", 1: "10GiB", "cpu": "180GiB"}
+        loading["eval_device_map"] = "balanced"
+    return loading
+
+
+def _evaluate_one(
+    config: dict[str, Any], name: str, method: str | None, rank: int | None, windows,
+    *, dual_gpu: bool = False, batch_size: int | None = None, ce_chunk_tokens: int = 2048,
+):
     output = run_dir(config) / "evaluation" / "per_window" / f"{safe_name(name)}.jsonl"
     existing = _read_jsonl(output)
     for expected_window, record in enumerate(existing):
@@ -710,7 +747,27 @@ def _evaluate_one(config: dict[str, Any], name: str, method: str | None, rank: i
     if start >= windows["input_ids"].shape[0]:
         log("evaluate", f"configuration={name} already complete windows={start}")
         return existing
-    model = load_model(config, config["eval_dtype"], config.get("eval_device_map", "auto"))
+    loading = _evaluation_load_config(config, dual_gpu)
+    gpu_indices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
+    for gpu_index in gpu_indices:
+        torch.cuda.reset_peak_memory_stats(gpu_index)
+    model = load_model(loading, config["eval_dtype"], loading.get("eval_device_map", "auto"))
+    device_map = getattr(model, "hf_device_map", {})
+    log("evaluate", f"configuration={name} device_map={device_map}")
+    if dual_gpu:
+        placements = {str(value) for value in device_map.values()}
+        if not placements or not placements <= {"0", "1", "cuda:0", "cuda:1"}:
+            raise RuntimeError(f"Dual-GPU evaluation requires GPU-resident weights; got {device_map}")
+    save_json(
+        run_dir(config) / "evaluation" / "runtime" / f"{safe_name(name)}_{uuid.uuid4().hex}.json",
+        {
+            "created_at_utc": utc_now(), "configuration": name, "start_window": start,
+            "batch_size": batch_size if batch_size is not None else int(config["eval_batch_size"]),
+            "ce_chunk_tokens": ce_chunk_tokens, "dual_gpu": dual_gpu,
+            "hf_device_map": {key: str(value) for key, value in device_map.items()},
+            "max_memory": loading.get("max_memory"), "torch": torch.__version__,
+        },
+    )
     handles = []
     if method is not None:
         qera = import_official_qera(config)
@@ -725,7 +782,8 @@ def _evaluate_one(config: dict[str, Any], name: str, method: str | None, rank: i
     total = int(windows["input_ids"].shape[0])
     output.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
-    batch_size = int(config["eval_batch_size"])
+    batch_size = batch_size if batch_size is not None else int(config["eval_batch_size"])
+    log("evaluate", f"configuration={name} starting window={start}/{total} batch_size={batch_size} ce_chunk_tokens={ce_chunk_tokens}")
     try:
         with output.open("a", encoding="utf-8") as handle, torch.inference_mode():
             for index in range(start, total, batch_size):
@@ -733,17 +791,11 @@ def _evaluate_one(config: dict[str, Any], name: str, method: str | None, rank: i
                 ids = windows["input_ids"][index:completed].to(input_device)
                 mask = windows["attention_mask"][index:completed].to(input_device)
                 logits = model(input_ids=ids, attention_mask=mask, use_cache=False).logits
-                shift_logits = logits[:, :-1, :].contiguous()
-                shift_labels = ids[:, 1:].to(shift_logits.device).contiguous()
-                valid = mask[:, 1:].to(shift_logits.device).bool()
-                losses = F.cross_entropy(
-                    shift_logits.view(-1, shift_logits.shape[-1]),
-                    shift_labels.view(-1),
-                    reduction="none",
-                ).view_as(shift_labels)
+                window_metrics = _chunked_window_nll(logits, ids, mask, ce_chunk_tokens)
+                # Release the previous logits before starting the next forward.
+                del logits, ids, mask
                 for offset, window_index in enumerate(range(index, completed)):
-                    nll_sum = float(losses[offset][valid[offset]].sum().item())
-                    tokens = int(valid[offset].sum().item())
+                    nll_sum, tokens = window_metrics[offset]
                     record = {
                         "configuration": name,
                         "window": window_index,
@@ -756,13 +808,19 @@ def _evaluate_one(config: dict[str, Any], name: str, method: str | None, rank: i
                 os.fsync(handle.fileno())
                 elapsed = time.monotonic() - started
                 eta = elapsed / max(1, completed - start) * (total - completed)
+                memory_log = " ".join(
+                    f"gpu{gpu_index}_peak_allocated_GiB={torch.cuda.max_memory_allocated(gpu_index) / 2**30:.2f} "
+                    f"gpu{gpu_index}_peak_reserved_GiB={torch.cuda.max_memory_reserved(gpu_index) / 2**30:.2f}"
+                    for gpu_index in gpu_indices
+                )
                 log(
                     "evaluate",
-                    f"configuration={name} window={completed}/{total} elapsed={elapsed:.0f}s eta={eta:.0f}s",
+                    f"configuration={name} window={completed}/{total} elapsed={elapsed:.0f}s eta={eta:.0f}s {memory_log}",
                 )
     finally:
         for registered in handles:
             registered.remove()
+        handles.clear()
         del model
         gc.collect()
         if torch.cuda.is_available():
@@ -816,14 +874,26 @@ def write_evaluation_tables(config: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def evaluate(config: dict[str, Any], only: str | None = None) -> dict[str, Any]:
+def evaluate(
+    config: dict[str, Any], only: str | None = None, *, dual_gpu: bool = False,
+    batch_size: int | None = None, ce_chunk_tokens: int = 2048,
+) -> dict[str, Any]:
+    if batch_size is not None and batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    if ce_chunk_tokens <= 0:
+        raise ValueError("ce_chunk_tokens must be positive")
+    create_plan(config)  # Validate the saved plan without changing the YAML.
+    _evaluation_load_config(config, dual_gpu)  # Fail before model loading if a GPU is missing.
     windows = load_file(str(frozen_path(config, "wikitext2")))
     matched = False
     for name, method, rank in _configuration_names(config):
         if only and name != only:
             continue
         matched = True
-        _evaluate_one(config, name, method, rank, windows)
+        _evaluate_one(
+            config, name, method, rank, windows, dual_gpu=dual_gpu,
+            batch_size=batch_size, ce_chunk_tokens=ce_chunk_tokens,
+        )
         write_evaluation_tables(config)
     if only and not matched:
         choices = [item[0] for item in _configuration_names(config)]

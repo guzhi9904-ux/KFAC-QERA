@@ -86,6 +86,32 @@ python experiments/qera_original_a_isolation/run.py \
 
 ## 审查与运行
 
+### 已完成求解后，双 RTX 4090 仅续跑评测
+
+保留原始 YAML 和 `run_dir`，在原环境中执行：
+
+```bash
+export CONFIG=experiments/qera_original_a_isolation/configs/llama3.1-8b.yaml
+bash experiments/qera_original_a_isolation/scripts/evaluate_dual_4090.sh
+```
+
+该入口仅运行 WikiText-2 的 10 组评测，默认 batch size 8，模型上下文长度仍为 2048。权重使用
+`device_map=balanced`，两张卡的权重预算各 10 GiB，为 logits 和激活留出空间。
+只改变加载模型时的内存预算，原实验指纹、数据、统计组和补偿保持原样。
+可通过 `EVAL_BATCH_SIZE=4` 调整评测批次；用 `--only BF16` 仅评测基线。
+每次加载的实际设备分配和运行参数记录在 `evaluation/runtime/`。
+进度日志同时显示两张卡的 PyTorch 峰值 allocated/reserved 显存。
+
+评测默认对每个窗口的全部 2047 个预测位置一次执行完整词表交叉熵，然后沿用原先的
+逐窗口 FP32 NLL 求和与 mask。一次前向仍输入整个 batch 的完整 2048-token 窗口。
+这样避免完整 shifted-logits 副本以及整批 log-softmax 工作区，并在下批前向之前释放 logits。
+如需进一步减少 CE 工作区，可设置 `EVAL_CE_CHUNK_TOKENS=256`，该值只改变
+loss 计算的分块大小，不改变模型前向的序列长度或 attention 上下文。此处是附加评测脚本的
+显存优化，不应标为未经改动的官方评测入口；分块与原实现的数值一致性由
+测试覆盖，跨设备的末位浮点差异仍可能存在。进程中断后用相同入口续跑。
+
+### 完整流水线
+
 ```bash
 CONFIG=experiments/qera_original_a_isolation/configs/llama3.1-8b.yaml
 python experiments/qera_original_a_isolation/run.py --config "$CONFIG" doctor

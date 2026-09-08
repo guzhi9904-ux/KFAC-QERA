@@ -32,6 +32,9 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--shard", required=True, type=int)
     evaluation = commands.add_parser("evaluate")
     evaluation.add_argument("--only", help="One configuration, e.g. QERA_FULL_R32")
+    evaluation.add_argument("--dual-gpu", action="store_true", help="Balance evaluation weights over two GPUs")
+    evaluation.add_argument("--batch-size", type=int, help="Evaluation-only batch size; preserves the saved plan")
+    evaluation.add_argument("--ce-chunk-tokens", type=int, default=2048, help="CE token rows per window (does not change context length)")
     commands.add_parser("summarize")
     commands.add_parser("run")
     return result
@@ -56,7 +59,10 @@ def main(argv: list[str] | None = None) -> int:
         case "solve":
             output = solve_shard(config, args.shard)
         case "evaluate":
-            output = evaluate(config, args.only)
+            output = evaluate(
+                config, args.only, dual_gpu=args.dual_gpu,
+                batch_size=args.batch_size, ce_chunk_tokens=args.ce_chunk_tokens,
+            )
         case "summarize":
             output = write_evaluation_tables(config)
         case "run":

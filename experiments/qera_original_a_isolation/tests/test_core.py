@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import sys
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -20,6 +22,9 @@ from qera_original_a_isolation.common import (  # noqa: E402
     validate_config,
 )
 from qera_original_a_isolation.pipeline import (  # noqa: E402
+    _chunked_window_nll,
+    _evaluation_load_config,
+    _evaluate_one,
     _groups_from_config,
     _read_jsonl,
     _real_sqrtm_root,
@@ -123,3 +128,74 @@ def test_complex_sqrtm_matches_official_real_cast_and_normalization() -> None:
     np.testing.assert_allclose(real_root, np.diag([2.0, 1.0]))
     assert raw_imaginary == pytest.approx(0.5)
     assert normalized_imaginary == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 4, 8])
+@pytest.mark.parametrize("chunk_tokens", [1, 7, 256, 2048])
+def test_chunked_ce_matches_original_masked_window_nll(batch_size, chunk_tokens) -> None:
+    generator = torch.Generator().manual_seed(42)
+    logits = torch.randn(batch_size, 19, 257, generator=generator)
+    ids = torch.randint(257, (batch_size, 19), generator=generator)
+    mask = torch.ones_like(ids)
+    mask[-1, -3:] = 0
+    shifted = logits[:, :-1, :].contiguous()
+    original = torch.nn.functional.cross_entropy(
+        shifted.view(-1, 257), ids[:, 1:].contiguous().view(-1), reduction="none"
+    ).view(batch_size, -1)
+    actual = _chunked_window_nll(logits, ids, mask, chunk_tokens)
+    for row, (nll, tokens) in enumerate(actual):
+        valid = mask[row, 1:].bool()
+        assert tokens == int(valid.sum())
+        assert nll == pytest.approx(float(original[row][valid].sum()), rel=1e-6)
+
+
+def test_dual_gpu_loading_does_not_mutate_experiment_plan_config(monkeypatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    config = {"max_memory": {"0": "16GiB", "cpu": "900GiB"}, "eval_device_map": "auto"}
+    original = {"max_memory": dict(config["max_memory"]), "eval_device_map": "auto"}
+    loading = _evaluation_load_config(config, True)
+    assert config == original
+    assert loading["max_memory"] == {0: "10GiB", 1: "10GiB", "cpu": "180GiB"}
+    assert loading["eval_device_map"] == "balanced"
+
+
+def test_dual_gpu_requires_two_visible_gpus(monkeypatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    with pytest.raises(RuntimeError, match="two visible"):
+        _evaluation_load_config({}, True)
+
+
+def test_evaluation_resumes_partial_batch_then_skips_completed(tmp_path, monkeypatch) -> None:
+    import qera_original_a_isolation.pipeline as pipeline
+
+    model = torch.nn.Module()
+    model.embedding = torch.nn.Embedding(17, 17)
+    model.get_input_embeddings = lambda: model.embedding
+    model.forward = lambda input_ids, **kwargs: SimpleNamespace(logits=model.embedding(input_ids))
+    loads = []
+
+    def load(*args):
+        loads.append(args)
+        return model
+
+    monkeypatch.setattr(pipeline, "load_model", load)
+    config = {"run_dir": str(tmp_path), "eval_dtype": "float32", "eval_batch_size": 4}
+    windows = {"input_ids": torch.arange(35).reshape(5, 7) % 17, "attention_mask": torch.ones(5, 7)}
+    path = tmp_path / "evaluation" / "per_window" / "BF16.jsonl"
+    path.parent.mkdir(parents=True)
+    with torch.inference_mode():
+        expected = _chunked_window_nll(model.embedding(windows["input_ids"]), windows["input_ids"], windows["attention_mask"], 256)
+    prefix = [dict(configuration="BF16", window=i, nll_sum=nll, tokens=tokens) for i, (nll, tokens) in enumerate(expected[:2])]
+    path.write_text("".join(json.dumps(row) + "\n" for row in prefix), encoding="utf-8")
+    records = _evaluate_one(config, "BF16", None, None, windows, batch_size=4, ce_chunk_tokens=3)
+    assert [record["window"] for record in records] == list(range(5))
+    for record, (nll, tokens) in zip(records, expected):
+        assert record["nll_sum"] == pytest.approx(nll, rel=1e-6)
+        assert record["tokens"] == tokens
+    assert _evaluate_one(config, "BF16", None, None, windows) == records
+    assert len(loads) == 1
+    runtime = json.loads(next((tmp_path / "evaluation" / "runtime").glob("*.json")).read_text())
+    assert runtime["start_window"] == 2
+    assert runtime["batch_size"] == 4
