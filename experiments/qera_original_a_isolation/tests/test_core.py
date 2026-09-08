@@ -28,6 +28,7 @@ from qera_original_a_isolation.pipeline import (  # noqa: E402
     _groups_from_config,
     _read_jsonl,
     _real_sqrtm_root,
+    _reset_evaluation_memory_peaks,
     _take_streaming_rows,
 )
 
@@ -165,6 +166,34 @@ def test_dual_gpu_requires_two_visible_gpus(monkeypatch) -> None:
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
     with pytest.raises(RuntimeError, match="two visible"):
         _evaluation_load_config({}, True)
+
+
+def test_peak_statistics_initialize_each_device_before_reset(monkeypatch) -> None:
+    initialized = set()
+    reset = []
+
+    def allocate(*args, device, **kwargs):
+        initialized.add(int(str(device).split(":")[-1]))
+        return object()
+
+    def reset_peak(device):
+        if device not in initialized:
+            raise RuntimeError("Invalid device argument")
+        reset.append(device)
+
+    monkeypatch.setattr(torch, "empty", allocate)
+    monkeypatch.setattr(torch.cuda, "reset_peak_memory_stats", reset_peak)
+    _reset_evaluation_memory_peaks([0, 1])
+    assert reset == [0, 1]
+
+
+def test_peak_statistics_on_real_cuda_devices() -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA hardware is required for the allocator integration check")
+    devices = list(range(torch.cuda.device_count()))
+    _reset_evaluation_memory_peaks(devices)
+    for device in devices:
+        assert torch.cuda.max_memory_allocated(device) >= 0
 
 
 def test_evaluation_resumes_partial_batch_then_skips_completed(tmp_path, monkeypatch) -> None:

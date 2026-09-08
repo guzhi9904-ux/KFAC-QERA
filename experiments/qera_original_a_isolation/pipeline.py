@@ -734,6 +734,16 @@ def _evaluation_load_config(config: dict[str, Any], dual_gpu: bool) -> dict[str,
     return loading
 
 
+def _reset_evaluation_memory_peaks(gpu_indices: list[int]) -> None:
+    for gpu_index in gpu_indices:
+        # torch 2.3 can reject resetPeakMemoryStats before the CUDA caching
+        # allocator is initialized. A real allocation also initializes a
+        # previously unused secondary device. Keep model loading in the peak.
+        probe = torch.empty(1, dtype=torch.uint8, device=f"cuda:{gpu_index}")
+        del probe
+        torch.cuda.reset_peak_memory_stats(gpu_index)
+
+
 def _evaluate_one(
     config: dict[str, Any], name: str, method: str | None, rank: int | None, windows,
     *, dual_gpu: bool = False, batch_size: int | None = None, ce_chunk_tokens: int = 2048,
@@ -749,8 +759,7 @@ def _evaluate_one(
         return existing
     loading = _evaluation_load_config(config, dual_gpu)
     gpu_indices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
-    for gpu_index in gpu_indices:
-        torch.cuda.reset_peak_memory_stats(gpu_index)
+    _reset_evaluation_memory_peaks(gpu_indices)
     model = load_model(loading, config["eval_dtype"], loading.get("eval_device_map", "auto"))
     device_map = getattr(model, "hf_device_map", {})
     log("evaluate", f"configuration={name} device_map={device_map}")
