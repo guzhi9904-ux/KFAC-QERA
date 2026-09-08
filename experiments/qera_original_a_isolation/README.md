@@ -144,6 +144,79 @@ python experiments/qera_original_a_isolation/run.py --config "$CONFIG" evaluate 
 python experiments/qera_original_a_isolation/run.py --config "$CONFIG" summarize
 ```
 
+## 独立官方 harness Word PPL 核对（先 BF16）
+
+这一步不调用上面的 token-window 评测器。QERA Table 16 报告的是 **Word ppl**，
+原来的 `138 × 2047 = 282486` 是预测 token 数；两者不能直接比较。
+
+新增入口锁定官方 QERA commit `bd7fc86a2e44d41f95b9b0421f27f5624dd37064`
+所绑定的 harness 子模块 commit `3823cfec41c016378acbcc8616dd1ac92c15edd4`，
+来自 `ChengZhang-98/lm-evaluation-harness`，不安装浮动最新版。
+运行前核验 task、预处理、HFLM、评测器、指标与 rolling 工具文件的 SHA256。
+WikiText 文档预处理、rolling likelihood 与 Word PPL 聚合均由该 harness 执行。
+数据为 `EleutherAI/wikitext_document_level / wikitext-2-raw-v1 / test`，
+不用之前冻结的 138 个窗口，不需要重新下载 SlimPajama。
+
+模型使用已有本地 BF16 权重，eager attention，2048-token 上下文、无 chat template，
+调用官方 QERA 的 `auto-balanced` 设备分配。默认 harness batch size 1，
+与官方 `HFLM(model)` 的有效默认值一致；两卡分配权重不代表数据并行。
+不使用自定义 CE 分块。`bootstrap_iters=0` 只省略标准误 bootstrap，不改变 PPL 点估计。
+权重、tokenizer、数据文本与运行协议都记录指纹。模型文件哈希阶段会逐文件输出日志；
+正式评测进度由 harness 的文档级进度条输出。
+
+在 **现有 qera-original-a 环境**、仓库根目录执行：
+
+```bash
+bash experiments/qera_original_a_isolation/scripts/setup_harness.sh
+export CUDA_VISIBLE_DEVICES=0,1
+export CONFIG=experiments/qera_original_a_isolation/configs/llama3.1-8b.yaml
+bash experiments/qera_original_a_isolation/scripts/run_harness_word_ppl.sh \
+  --stage bf16 --allow-download
+```
+
+安装脚本固定当前 torch、transformers、datasets 等核心包版本为 pip constraints，
+不升级 PyTorch/CUDA；存在依赖冲突时停止而非放宽约束。只补装 pinned harness 和缺少的依赖，
+安装过程直接显示下载进度，沿用服务器现有 pip 镜像配置。
+`--allow-download` 允许获取 harness 的文档级 WikiText 数据集；本地模型仍强制离线加载。
+该参数只控制下载权限，不改变评测协议。数据准备好后可以不加。
+
+先查看 `evaluation_harness_word_ppl/bf16_reference_check.json`。
+论文 BF16 参考值为 **7.55**；默认“接近”阈值为绝对差 **0.05**，
+这是本实验的工程检查阈值，不是论文规定的误差范围，也不代表已经严格复现全部论文设置。
+不接近则保存结果、返回 `NEEDS_REVIEW`（退出码 2），不启动量化对照。
+确认基线后，在同一环境、同样参数下执行：
+
+```bash
+bash experiments/qera_original_a_isolation/scripts/run_harness_word_ppl.sh \
+  --stage compare --allow-download
+```
+
+它校验并复用已完成的 BF16 结果，再运行：
+
+| 配置 | 论文 Word PPL 参考 | 使用内容 |
+| --- | ---: | --- |
+| W4_MXINT | 8.78 | 官方 MXINT4，block size 32，重新量化已有 BF16 权重 |
+| QERA_DIAG_R32 | 8.45 | 已保存 Diag-A 补偿的 rank32 前缀 |
+| QERA_FULL_R32 | 8.33 | 已保存 Full-A 补偿的 rank32 前缀 |
+
+比较阶段验证所有低秩文件的哈希与形状，不访问或重算 roots、A 或校准统计量。
+这里评测的是**已有 A-isolation 产物**，量化与补偿加载继续沿用该独立实验的实现；
+不能把它描述成从校准到评测全部未经修改的官方 PTQ 流水线。
+`--stage all` 可自动执行上述基线检查和通过后的三个对照，默认仍然只跑 `bf16`。
+
+输出统一放在原 run_dir 下新增的 `evaluation_harness_word_ppl/`：
+
+- `protocol.json`：源码、模型、数据、环境及评测参数；
+- `BF16/results.json` 等：完整 harness 原始结果和逐文档 samples；
+- `BF16/complete.json` 等：配置完成记录与结果校验和；
+- `bf16_reference_check.json`：7.55 基线差值检查；
+- `word_ppl_summary.csv`：独立 Word PPL 结果表。
+
+旧 `evaluation/` 不修改。新入口按**完整配置**续跑：完成的配置校验后跳过，
+被中断的那一个配置重新评测，不支持逐文档断点。更改 batch size、源码、权重、
+数据或核心环境后应使用新的 `--output-dir`，避免混用协议。
+不要同时启动多个进程写同一个输出目录。
+
 ## 保留内容
 
 运行目录中长期保留：
