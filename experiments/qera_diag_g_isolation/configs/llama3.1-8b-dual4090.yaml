@@ -1,0 +1,20 @@
+source_run_dir: /share/home/tm902089733300000/a913520780/chengkang/qera_runs/llama3.1-8b-original-a-isolation
+run_dir: /share/home/tm902089733300000/a913520780/chengkang/qera_runs/llama3.1-8b-diag-g-256
+num_calibration_windows: 256
+sequence_length: 2048
+ranks: [8, 16, 32, 64]
+teacher_dtype: float32
+collect_batch_size: 1
+collect_max_memory: {"0": 18GiB, "1": 18GiB, cpu: 160GiB}
+save_activations_on_cpu: true
+ce_gradient_chunk_tokens: 128
+checkpoint_every_windows: 8
+g_relative_floor: 1.0e-6
+identity_product_tolerance: 1.0e-3
+control_ppl_tolerance: 1.0e-2
+solve_device: cuda:0
+eval_batch_size: 8
+eval_ce_chunk_tokens: 256
+eval_max_memory: {"0": 10GiB, "1": 10GiB, cpu: 160GiB}
+cpu_threads: 14
+retain_raw_g: true
