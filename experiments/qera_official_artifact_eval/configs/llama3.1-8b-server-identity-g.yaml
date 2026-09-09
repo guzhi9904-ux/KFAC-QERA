@@ -1,0 +1,37 @@
+# Identity-G extension. This uses a new output root and does not modify or
+# invalidate official-word-ppl-4096-existing-artifacts.
+task: wikitext
+context_length: 4096
+max_position_embeddings: 4096
+dtype: bfloat16
+attn_implementation: eager
+device_map: auto-balanced
+lm_eval_batch_size: auto
+num_fewshot: null
+
+# Wq is retained as an internal model-loader dependency. The identity-G
+# entrypoint selects only DIAG_GI/FULL_GI during the artifact stage.
+methods: [wq, diag_gi, full_gi]
+runner_mode: identity-g-extension
+evaluation_engine_sha256: f84633b333b4bdeb995ee19eacba8e1542789b42fb995895c71aee95c1232e75
+ranks: [8, 16, 32, 64]
+bf16_reference: 7.5527
+bf16_tolerance: 0.05
+expected_visible_gpus: 2
+
+official_qera_commit: bd7fc86a2e44d41f95b9b0421f27f5624dd37064
+harness_commit: 3823cfec41c016378acbcc8616dd1ac92c15edd4
+
+model_path: /share/home/tm902089733300000/a913520780/chengkang/modelzoo/Meta-Llama-3.1-8B
+official_qera_root: /share/home/tm902089733300000/a913520780/chengkang/QERA-official-bd7fc86
+harness_source: /share/home/tm902089733300000/a913520780/chengkang/QERA-harness-3823cfe
+
+artifact_runs:
+  - name: mxint4
+    width: 4
+    run_dir: /share/home/tm902089733300000/a913520780/chengkang/qera_runs/llama3.1-8b-diag-g-256/full_svd_v1
+  - name: mxint3
+    width: 3
+    run_dir: /share/home/tm902089733300000/a913520780/chengkang/qera_runs/llama3.1-8b-diag-g-256/mxint3_v1
+
+output_dir: /share/home/tm902089733300000/a913520780/chengkang/qera_runs/official-word-ppl-4096-existing-artifacts-identity-g
