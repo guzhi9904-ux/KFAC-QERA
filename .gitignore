@@ -46,6 +46,7 @@ models/
 snapshots/
 
 # Build outputs
+*.zip
 build/
 dist/
 *.egg-info/

@@ -1,5 +1,15 @@
 # QERA-style MXINT4 Full-A / Full-G Factorial Experiments
 
+## 当前研究入口（2026-09-11）
+
+下文保留初始 2×3 实验的用法；后续隔离实验不要与初始入口混用。
+
+- [数值诊断与同根 FP64 / 四个 rank 双 PPL](tools/precision_audit/README.md)：最近发布工具的唯一源码归档，各阶段共用一份冻结 helper。
+- [Qwen2.5-7B Base MXINT3](experiments/qwen25_base_isolation_v1/README.md)：包含离线数据准备与续跑；Full-A 数值异常仍未解决，不能当作完成的跨模型结果。
+- [问题与处理日志](docs/research/ISSUE_LOG.md) · [PPL 阶段总账](docs/research/PPL_SUMMARY.md)。
+
+**正在运行或需要续跑的服务器目录不要 `git pull`、覆盖脚本或升级环境。** 本次 GitHub 更新不要求重新部署正在跑的双 PPL 实验。工具按哈希冻结，新任务请使用独立目录与固定 commit。
+
 用于检查低秩量化误差补偿中，输入二阶矩 `A` 与输出梯度二阶矩 `G` 的对角/完整矩阵近似是否真的改善语言模型 PPL。
 
 仓库实现同一组 MXINT4-B32 权重上的 2×3 实验：

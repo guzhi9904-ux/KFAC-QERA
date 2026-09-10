@@ -1,0 +1,4 @@
+model_id: Qwen/Qwen2.5-7B
+model_path: /share/home/tm902089733300000/a913520780/chengkang/modelzoo/Qwen2.5-7B
+llama_g_run: /share/home/tm902089733300000/a913520780/chengkang/qera_runs/llama3.1-8b-diag-g-256
+run_dir: /share/home/tm902089733300000/a913520780/chengkang/qera_runs/qwen2.5-7b-base-mxint3-v1
