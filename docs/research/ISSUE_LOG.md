@@ -449,6 +449,20 @@ tail -n 60 -F "$LOG"
 - 输出qera_diagnostics/qwen_a_fp64_target_v1，report.json为完成事务标志，包含候选状态与数值门槛；DIAGNOSTIC_COMPLETE不是科学PASS。退出2表示完整诊断但门槛/有限性失败；候选永不自动部署。中断只需重做这一个模块，已完成重跑核验后复用。
 - 新离线小包依赖前两份已解压helper，只读使用；无需服务器访问GitHub，不覆盖Llama正在运行的工具或共享conda。BF16指标明确仅为舍入因子在FP64下的proxy，不是实际BF16激活执行。
 
+## 2026-09-11：Qwen 单目标全程FP64通过，推进DA/FA双PPL
+
+状态：单模块服务器实测通过；全模块及双PPL新入口已实现，等待独立GPU pilot和正式结果。
+
+- 用户12:48回传：同一个已保存FP32 Full-A root，G=I，全程FP64求解后r8/16/32/64均通过1e-9门槛，BF16舍入代理无异常。
+- r64加权SSE=3.1300714145205752→2.5269764388999896；逆残差3.0908173937953684e-14；correction/error范数比0.19841156738461993（此前仅逆FP64约649386）；r8比值0.11252882828962311。未重收A、未重建root。单模块没有实际PPL，不能声称Qwen端点已修好，也不能区分乘法和SVD各自贡献。
+- 用户确认DA/FA均做同根FP64，再明确要求普通token-PPL与word-PPL都跑。新增qwen_gi_fp64_v1.py、qwen_gi_word_v1.py、独立shell/README/测试；每种指标BF16/W3/DA-GI与FA-GI四rank，共10配置。DG/GF不在本轮。
+- 原A/root/Wq/code/conda全部只读；单目标旧候选不自动收编，FA直接复用其哈希固定求解函数。DA采用FP64向量行缩放和除法，不新加floor。所有因子重新按FP64路径计算，保存rank64再做四rank BF16部署。
+- token复用冻结Qwen evaluator，143×2048，batch8/CE256；完整旧BF16/Wq若存在则校验，否则明确标记无旧基线。word沿用Llama固定4096/62文档/241335词harness协议，替换为Qwen自身tokenizer与模型，不借用Llama的BF16数值作Qwen控制。原始文档和依赖身份需一致，不将token损失简单换分母。
+- GPU pilot：L0 gate/down与L1 down，共3模块×2种A；token前8窗口只在smoke保存。word BF16为完整62文档基线，后续正式run可复用。两种pilot结果的用途明确分开。
+- 断点：模块×方法、token每8窗口、word每完整配置。SIGTERM/软预算安全暂停；强制掉电只丢当前未提交单元。每次启动重新核验源文件不代表重收统计。独立输出qera_diagnostics/qwen_gi_fp64_v1；不触碰Llama正在运行的目录。
+- 官方固定commit的QERA设备放置函数已核对适用于`.layers.`结构，并新增utils.py哈希检查；word tokenizer的实际本地路径和4096 context运行时核验。不改共享依赖，离线包使用仓库内同一份冻结helper源文件。
+- 本地94项CPU测试通过，包含新12项：DA与稠密FP64等价、非正root拒绝、四rank/10配置、因子来源与tensor篡改、失败门槛、实际BF16两次GEMM及bias、token逐批暂停/续跑/完成不重复加载、word完成事务/hash、冻结helper和LF清单。shell语法与CLI检查通过。未在本机跑真实CUDA/harness，服务器pilot仍必需。
+
 ## 新条目模板
 
 ```text

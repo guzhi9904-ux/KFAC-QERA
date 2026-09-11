@@ -21,6 +21,8 @@
 
 ## 已在跑的实验
 
+Qwen 新入口：[DA/FA 同根 FP64 + token/word 双 PPL](README_qwen_gi_fp64_v1.md)。两种指标各10配置，独立输出与离线包；不更新任何正在运行的旧工具。pilot 的8窗口 token smoke与完整62文档 word BF16基线分别保存。
+
 **什么也不必更新。** 继续使用原 `*_tools/`、原输出目录和原续跑命令。本次只归档源码，不接触服务器进程、环境、检查点或后续续跑依赖。
 
 所有阶段共用这里的一份冻结 helper；`frozen_harness_word_ppl.py` 是已发布双 PPL 包要求的固定哈希副本，不能用随时变化的模块引用替换。它与 `experiments/qera_original_a_isolation/harness_word_ppl.py` 的固定版本相同。
