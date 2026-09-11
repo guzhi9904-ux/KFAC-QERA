@@ -10,10 +10,13 @@
 | 目标模块谱与 FP64 重求解 | [full_g_target_probe_v1.py](full_g_target_probe_v1_README.md) | L0 o_proj 已诊断 |
 | A4：单模块 OLD / FP64 / ZERO | [full_g_precision_r8_v1.py](README_full_g_precision_r8_v1.md) | r8 三组完成 |
 | A5：全模块 FA+GI/DG/GF 同根 FP64 | [full_a_all_precision_r8_v1.py](README_full_a_all_precision_r8_v1.md) | r8 六组完成；保存 rank64 因子 |
-| A5 扩展：四个 rank × token/word PPL | [full_a_all_ranks_dual_ppl_v1.py](README_full_a_all_ranks_dual_ppl_v1.md) | pilot 完成；用户已启动正式 run，结果待回传 |
+| A5 扩展：四个 rank × token/word PPL | [full_a_all_ranks_dual_ppl_v1.py](README_full_a_all_ranks_dual_ppl_v1.md) | 已回收两套各14行汇总；原始控制文件待回收 |
+| DA 扩展：同根 FP64 × 四 rank × 双 PPL | [diag_a_fp64_dual_v1.py](README_diag_a_fp64_dual_v1.md) | 新实现，待服务器 doctor/pilot；不覆盖旧阶段 |
 | Qwen Full-A 只读诊断 | `qwen_full_a_audit_v1.py --help` | 异常未关闭，不自动修复 |
 
 上述 FP64 实验仍使用既定根矩阵的数值，不是“原始 FP64 A 重新构造高精度 root”。四 rank 扩展复用 A5 因子，没有重新收集 A/G 或重做 SVD。token-PPL 与 4096 word-PPL 分开保存，不能相互换算或混合排名。结果见[总账](../../docs/research/PPL_SUMMARY.md)，故障与处理见[日志](../../docs/research/ISSUE_LOG.md)。
+
+新增 DA 入口需要重新做 DA 的 FP64 SVD/逆求解，但不收集统计；共用冻结双 PPL evaluator。两台双卡机器的启动、续跑和 Qwen 只读排查见[操作说明](README_diag_a_fp64_dual_v1.md)。
 
 ## 已在跑的实验
 

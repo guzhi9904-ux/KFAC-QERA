@@ -11,7 +11,7 @@
 | A3 | Llama MXINT3，增加 DA/FA + GF，四个 rank | 已有完整表 | 原始 Full-G 结果；FA+GF 有已证实的数值问题，不能直接作为方法上限 |
 | A4 | MXINT3 FA+GF，r8，仅 L0 o_proj：OLD / FP64 / ZERO | 三组完成，OLD 精确回放通过 | 单模块数值干预，不是全模块修复结果 |
 | A5 | 全 224 模块，FA+GI/DG/GF，同根定义 FP64 重求解，r8 评估 | 六组各 138 窗口完成，用户日志三组控制通过 | 同精度 GF < DG < GI；保留与 A4 的范围区别 |
-| A5 扩展 | 复用 A5 rank64 因子，r8/16/32/64 × token/word PPL | pilot 已完成；用户已启动正式 run，完整结果待回传 | 不重收 A/G、不升级 root；token 和 word 分开比较 |
+| A5T / A5W | 复用 A5 rank64 因子，r8/16/32/64 × token/word PPL | 两套各 14 组汇总已回传；完整控制与逐单元文件待核验 | 不重收 A/G、不升级 root；token 和 word 分开比较 |
 | A6 | 原始 FP64 A 统计 → 重新构造并保存 FP64 A-root | 尚未实施 | 与 A5 的求解精度实验分开 |
 | Q1 | 当前 Qwen2.5-7B base，MXINT3，143 评估窗口 | A 收集完成；Full-A 求解异常，未收到完整 PPL 表 | 当前跨模型主线，不能拿旧 Qwen 表代替 |
 
@@ -110,11 +110,46 @@ OLD 回放：PPL 差为 0，最大逐窗口 NLL 差为 0。
 与 A4 比较：仅 L0 o_proj FP64 替换为 9.380330726026495，全模块 GF FP64 为 9.379707357395414，净差仅 -0.0006233686310803677 PPL / -18.773193359375 NLL。单模块干预已复现几乎全部终点恢复，但其余模块的正负效应可能抵消，不能推出它们逐个都正确或无影响。
 
 - 全 224 模块 × 3 方法 = 672 份新求解。
-- 保存 FP64 rank64 因子，当前检查和部署评估仅 r8；r16/r32/r64 尚无本轮新结果。
+- 保存 FP64 rank64 因子；A5 首轮仅评估 r8，后续四 rank 结果单列为 A5T / A5W。
 - 新输出目录：`/share/home/tm902089733300000/a913520780/chengkang/qera_diagnostics/full_a_all_precision_r8_v1/`。
 - 已收到前两份汇总的用户转录；待补 `solve_metrics.csv`、三份 `control_check.json` 及 `per_window.csv` / `paired_windows.csv` 用于更深入独立核验。
 - 不重收 A/G；不改 A-root 构造精度；不与 shrinkage、阻尼等方法改变混合。
-- 目前可解释范围仅 Llama-3.1-8B / MXINT3 / r8 / 当前 WikiText2 协议。r16/r32/r64、Qwen、其他数据域与 root 构造精度仍未由本轮证明。
+- A5 首轮可解释范围为 Llama-3.1-8B / MXINT3 / r8 / 当前 WikiText2 协议。后续 A5T/A5W 扩展 rank 和评估协议，不扩展到 Qwen、其他数据域或 root 构造精度。
+
+## A5T / A5W：四 rank 双 PPL 汇总（2026-09-11）
+
+沿用 A5 保存的 FP64 rank64 因子，取 r8/16/32/64 前缀，仍 BF16 部署。本次没有重新收集 A/G、重做 SVD 或重新构造高精度 A-root。以下为用户粘贴的两份完整汇总，不是直接读取服务器文件。
+
+### A5T：token-PPL
+
+Context=2048，138 个窗口，282486 prediction tokens。BF16=6.244857965521432，W3=14.201025810867502。
+
+| 方法 | r8 | r16 | r32 | r64 |
+| --- | ---: | ---: | ---: | ---: |
+| FA + GI | 9.502215248226642 | 9.279060993335984 | 9.019130030096079 | 8.781011818223643 |
+| FA + DG | 9.446071640927759 | 9.205591811614765 | 8.947442481840971 | 8.68496304397782 |
+| FA + GF | 9.379707357395414 | 9.151017792298537 | 8.922865590383106 | 8.651411959737494 |
+
+三组 r8 的总 NLL/PPL 与上一轮 A5 FP64 汇总精确相同；BF16/W3 与冻结 token 基线相同。这些回放不作为新增独立重复试验。
+
+### A5W：word-PPL
+
+Context=4096，62 个文档，241335 scored words。BF16=7.552676109453406，W3=18.951243109683297。PPL=exp(NLL sum / scored words)，62 个文档不是归一化分母。
+
+| 方法 | r8 | r16 | r32 | r64 |
+| --- | ---: | ---: | ---: | ---: |
+| FA + GI | 12.071128464734256 | 11.730946262609908 | 11.358756113992612 | 11.028067243910352 |
+| FA + DG | 12.183117382290838 | 11.688137348439398 | 11.37083805673295 | 10.908624629639382 |
+| FA + GF | 11.927251350580857 | 11.509977551437032 | 11.159393573807826 | 10.783143079455401 |
+
+归档结论与边界：
+
+- 在两套汇总内，同 rank 的 GF 均低于 GI/DG；三种方法各自均随 rank 增大而降低 PPL。
+- token-PPL 中 DG 在四个 rank 都优于 GI；word-PPL 中 DG 在 r8、r32 略差于 GI，在 r16、r64 优于 GI。不能概括为所有 G 设置都稳定提升。
+- 两套评估的上下文、计分方式及分母不同，不将绝对值混排，也不把表现差异仅归因于 word 归一化。
+- 本次 28 行的 NLL→PPL 及 word 平均 NLL 均复算通过。完整 control JSON、rank checks、逐窗口/逐文档结果尚未回收，因此没有独立重做控制或显著性分析。
+- 源目录：`/share/home/tm902089733300000/a913520780/chengkang/qera_diagnostics/full_a_all_ranks_dual_ppl_v1/`，分别对应 `token_ppl/ppl_summary.csv` 与 `word_ppl/ppl_summary.csv`。
+- Excel 保留全部历史结果，新增 A5T（主线总览）和 A5W（其他口径）；新记录 P142–P169，来源 S9/S10。原始 NLL、计数、PPL 在“数据明细”保留全精度。
 
 ## 其他历史表：单独归档，不能混排
 
@@ -135,8 +170,9 @@ OLD 回放：PPL 差为 0，最大逐窗口 NLL 差为 0。
 5. H2：旧 Qwen1.5B CSV（本地归档 `qwen2.5_7b_wikitext2_analysis/ppl_summary_qwen2.5_1.5b_reference.csv`，未随源码上传）。
 6. H3：旧 word-PPL CSV（本地归档 `artifacts/qera_aligned_word_ppl/qera_aligned_word_ppl_results.csv`，未随源码上传）。
 7. A5：2026-09-11 用户回传六组 `ppl_summary.csv` 和六组 `comparisons.csv`，源目录为本节列出的服务器 A5 目录；本地保留转录，不冒充服务器文件直接读取。
+8. A5T / A5W：2026-09-11 用户粘贴两套各 14 行的双 PPL 汇总。本地转录为 `outputs/01a07fb7-ppl-summary-20260910/dual_token_ppl_user_20260911.csv` 和 `dual_word_ppl_user_20260911.csv`，未随源码上传。
 
-Excel 共 141 条来源记录，其中主线 53 条阶段记录。共享 BF16、旧基线、OLD 回放都不是独立重复实验。106 条有 NLL 的记录通过 `exp(NLL sum / prediction tokens)` 或 `exp(mean NLL)` 复算，最大浮点差约 1.78e-15；35 条 word-PPL 缺 NLL，不能独立复算。A5 六组比较的 ΔPPL / ΔNLL / Δmean NLL 与汇总相符，token 胜/平/负数量均合计 282486。数值一致不代表历史实验协议已完成审计。
+Excel 共 169 条来源记录，其中主线 81 条（67 条 token、14 条 word）。共享 BF16、旧基线、OLD 回放都不是独立重复实验。134 条有 NLL 的记录按对应 token/word 分母或原始 mean NLL 复算，最大浮点差约 1.78e-15；35 条历史 word-PPL 缺 NLL，不能独立复算。A5 六组比较的 ΔPPL / ΔNLL / Δmean NLL 与汇总相符，token 胜/平/负数量均合计 282486。数值一致不代表历史实验协议已完成审计。
 
 Excel“数据明细”保存原始值、来源 ID、协议字段、复算公式及来源哈希。对话转录数据的哈希只标识本次转录，不冒充服务器源文件哈希。
 

@@ -22,7 +22,8 @@
 | Llama MXINT3 Full-G | 收集、求解、评估已完成；旧结果受到数值问题干扰，不能直接据此否定 Full-G |
 | L0 `o_proj` 数值诊断 | 已发现保存的 Full-A 根近奇异，FP32/FP64 correction 差异很大 |
 | L0 `o_proj` r8：OLD/FP64/ZERO | 实机完成，OLD 精确回放；FP64 和 ZERO 均大幅改善 |
-| 全模块 FA+GI/DG/GF FP64 求解，r8 | 代码及运行包已交付，36 项本地测试通过；尚未收到服务器 pilot/完整结果 |
+| 全模块 FA+GI/DG/GF FP64 求解，r8 | 六组完整汇总已回传；用户日志三组 OLD 控制通过 |
+| 同根 FP64 四 rank × token/word PPL | 两套各 14 组汇总已回传并复算；完整控制、rank 检查与逐单元文件待核验 |
 | 从原始 FP64 A 统计重新构造 FP64 root | 尚未实现、未启动，也不会由第一步脚本自动执行 |
 | Qwen Full-A 求解爆炸 | 已有诊断工具；当前对话没有确认修复闭环，不标为已解决 |
 | 真实 DG vs 置换 DG | 已讨论并记录，尚未实施 |
@@ -396,6 +397,32 @@ tail -n 60 -F "$LOG"
 - 整理后旧测试依赖工作区相对位置，直接 discover 有两项导入失败；新增 `run_cpu_tests.py` 只设置测试路径，不修改冻结实现。该入口下 55 项 CPU 测试通过，5 个 shell 脚本语法通过。
 - Qwen 默认本地 Windows 环境的测试在 SciPy `sqrtm/schur` 原生调用处中止；仅在本地测试进程设置 `MKL_THREADING_LAYER=SEQUENTIAL`、`OMP_NUM_THREADS=1` 后，全套 30 项测试通过。该现象支持本地线程运行库相关问题的排查方向，但尚未单独定位，不将其当作服务器 Qwen Full-A 数值异常的根因或修复。未升级任何依赖，未改服务器启动脚本。
 - 运行隔离：未连接或操作服务器。用户继续原工具目录和原指令；不要向运行中/待续跑 checkout 执行 `git pull` 或覆盖脚本。源码归档不会自动部署到共享文件系统。
+
+## 2026-09-11：四 rank token/word 汇总回收
+
+状态：用户回传两份各 14 行汇总；已补充 Excel 与 PPL 总账，不表示独立重做服务器全过程审计。
+
+- 归档编号 A5T / A5W，复用 A5 FP64 rank64 因子前缀，BF16 部署。没有改任何实验代码、A/G、root 或服务器产物。
+- token 协议：2048 context、138 窗口、282486 prediction tokens。word 协议：4096 context、62 documents、241335 scored words。二者分开存储和比较。
+- 新增 P142–P169 / S9–S10 共 28 行，保留原先 141 条记录的 ID 和所有原始值。总计 169 条；134 条有 NLL 的记录复算通过，最大 PPL 差约 1.78e-15；35 条旧 word 行仍缺 NLL。
+- 新 token 三组 r8 的 NLL/PPL 与 A5 精确一致；BF16/W3 token 基线一致。汇总重现不是逐窗口控制重审，也不是独立重复实验。
+- 同 rank 的 GF 在两套汇总中均优于 GI/DG。DG 在 token 四 rank 都优于 GI，但在 word r8/r32 略差于 GI；不写成所有对角 G 设置普遍改善。
+- word 平均 NLL 由 NLL sum / 241335 核对；文档数没有误作分母。Excel 新增文档数、scored words 字段，复算公式按指标选择正确分母，并检查链接及分母变化后可重算。
+- 继续待回收完整 control JSON、rank checks、逐窗口/逐文档文件；不作 IID-token 显著性声明。Qwen 和原始 FP64 A-root 构造问题仍未由本轮解决。
+
+## 2026-09-11：DA 同根 FP64 补齐与 Qwen 故障回顾
+
+状态：新代码已实现并通过65项 CPU 测试（含55项旧回归），两份新增 shell 语法通过；待两台双4090服务器验证，尚无新实机结果。
+
+- 用户确认 Llama 与 Qwen 分别用双卡4090。共享只读模型、统计和工具；独立输出、日志，不修改旧 checkout/conda/manifest/检查点。
+- 新 `tools/precision_audit/diag_a_fp64_dual_v1.py` / 启动 shell：补齐 Llama MXINT3 DA+GI/GD/GF 的 FP64 加权/SVD/求解，rank64存储与BF16直接前缀部署，四rank双PPL。复用冻结评估器，不再复制一套helper。
+- Diag-A复用保存的FP32向量，要求严格正值；遇零/负数中止，避免 dtype 改变旧epsilon处理。没有新阻尼、收缩或高精度root构造。G沿用已完成FA FP64路径的构造/归一化/floor/FP32输出定义。
+- 新构造的G-root与已完成FA FP64因子证书的root bits逐一核对；来源实验与原环境不符或root bits漂移时中止。需要保留原FA FP64实验目录，不修改其任何文件。
+- 每模块/方法原子提交FP64及BF16因子和四rank尾能量检查；token八窗口提交、word完整配置提交。真实CUDA显存、耗时、旧DA r8 token控制和旧word控制须服务器验证。
+- Qwen A已在14/14 shard收完。最终已知失败是layer1 down_proj Full-A GI求解；MSE=65477908.0，加权SSE 3.130071415508088→25140.280772709644。小的构根残差是在转FP32前计算，不是逆稳定性证明。此前lm_head OOM是另一问题，不混为同一根因。
+- 新Qwen shell只调用已冻结只读诊断：inspect存根结构，再固定FP32 SVD比较FP32/FP64 A侧逆求解。只写新日志，不自动修改correction、不重收A。等实际回传再判断修复路线。
+- 本次同时纳入上一轮已完成的A5T/A5W总表文档更新；未改变任何旧工具payload字节。
+- 详细启动与续跑见 `tools/precision_audit/README_diag_a_fp64_dual_v1.md`。本地CPU测试不代表服务器已修复或实验完成。
 
 ## 新条目模板
 
