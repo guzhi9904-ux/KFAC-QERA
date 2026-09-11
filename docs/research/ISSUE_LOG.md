@@ -463,6 +463,17 @@ tail -n 60 -F "$LOG"
 - 官方固定commit的QERA设备放置函数已核对适用于`.layers.`结构，并新增utils.py哈希检查；word tokenizer的实际本地路径和4096 context运行时核验。不改共享依赖，离线包使用仓库内同一份冻结helper源文件。
 - 本地94项CPU测试通过，包含新12项：DA与稠密FP64等价、非正root拒绝、四rank/10配置、因子来源与tensor篡改、失败门槛、实际BF16两次GEMM及bias、token逐批暂停/续跑/完成不重复加载、word完成事务/hash、冻结helper和LF清单。shell语法与CLI检查通过。未在本机跑真实CUDA/harness，服务器pilot仍必需。
 
+## 2026-09-11：Qwen v1 导入审计误处理 namespace package
+
+状态：用户13:43回传导入前置失败；v1a 修复待服务器重跑。
+
+- 在完成root/Wq来源核验后，`Path(module.__file__)` 收到None，发生TypeError。发生在 `import_evaluator`，早于word准备、pilot求解和PPL；不是A数值失败，也没有必要重收统计。
+- 仓库的 `qera_diag_g_isolation/full_svd_v1` 没有 `__init__.py`，真实导入为namespace package；此类包的 `__file__` 为None。此前94项测试没有覆盖实际namespace包导入，是新增审计代码的测试缺口。
+- 修复不采用“无文件就跳过”：验证namespace spec、包名、唯一`__path__`与spec搜索目录均指向冻结checkout中的对应目录，且存在manifest源码锚点；实际文件仍验证路径映射和原哈希。未知无文件模块、外部搜索目录或源码不符仍拒绝。
+- 新版本标记v1a，新离线目录及输出 `qwen_gi_fp64_v1a`；脚本文件名保持原名。保留旧失败输出，不伪造/迁移旧experiment指纹，不覆盖Llama/旧Qwen代码或conda。再次核验旧输入是审计，不重收A/G。
+- 数学/求解/部署/token与word评分函数未改动；增加真实namespace导入、目录注入拒绝、spec缺失拒绝、manifest缺失拒绝、普通源码哈希与路径拒绝六项回归测试。
+- 本地100项CPU测试通过，实际导入仓库full_svd_v1 namespace和solver回归成功；shell语法、diff检查通过。与bb221a3的AST对比确认原有函数仅import_evaluator改变，其余数值、部署、token评估和主流程函数不变，word脚本字节不变。服务器v1a pilot仍待验证。
+
 ## 新条目模板
 
 ```text

@@ -12,7 +12,7 @@ export PYTHONPATH="$BASE/qera_official_bf16_pydeps:$BASE/QERA-official-bd7fc86/s
 exec "$BASE/conda_envs/qera-original-a/bin/python" -B "$TOOLS_DIR/qwen_gi_fp64_v1.py" \
   --source-code "$BASE/KFAC-QERA-qwen25-base-v1" \
   --run-dir "$BASE/qera_runs/qwen2.5-7b-base-mxint3-v1" \
-  --output-dir "$BASE/qera_diagnostics/qwen_gi_fp64_v1" \
+  --output-dir "$BASE/qera_diagnostics/qwen_gi_fp64_v1a" \
   --harness-source "$BASE/QERA-harness-3823cfe" \
   --official-qera-root "$BASE/QERA-official-bd7fc86" \
   --word-reference-dir "$BASE/qera_runs/official-word-ppl-4096-existing-artifacts" "$@"

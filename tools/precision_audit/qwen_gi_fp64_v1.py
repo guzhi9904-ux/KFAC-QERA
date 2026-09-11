@@ -21,7 +21,7 @@ sys.dont_write_bytecode = True
 import torch
 import qwen_a_fp64_target_v1 as target
 
-VERSION = "qwen_gi_fp64_v1"
+VERSION = "qwen_gi_fp64_v1a"
 TARGET_SHA = "f35774e507e7906d09fd31ae938b9691223341d4961e31dd0718ede282572ea9"
 METHODS = ("diag_gi", "full_gi")
 RANKS = (8, 16, 32, 64)
@@ -214,19 +214,47 @@ def solve_all(entries, output, identity, single, h, stop, pilot=False):
     single.previous.write_csv(output/("pilot_rank_metrics.csv" if pilot else "rank_metrics.csv"), all_rows)
 
 
+def audit_imported_modules(source, records, modules, h):
+    """Namespace packages have no file: bind their exact search path instead.
+
+    No blanket skip of file-less modules. Require a real namespace package in
+    this checkout, backed by manifest entries; audit imported source files as
+    before. Reject extra search roots and unexpected file-less modules.
+    """
+    experiments = (source/"experiments").resolve()
+    for name, module in modules:
+        if name.split(".")[0] in ("qwen25_base_isolation_v1", "qera_original_a_isolation", "qera_diag_g_isolation"):
+            expected = experiments.joinpath(*name.split(".")).resolve()
+            filename = getattr(module, "__file__", None)
+            if filename is None:
+                spec = getattr(module, "__spec__", None)
+                paths = getattr(module, "__path__", None)
+                locations = getattr(spec, "submodule_search_locations", None)
+                if (spec is None or spec.name != name or spec.origin is not None or paths is None
+                        or locations is None or not expected.is_dir() or (expected/"__init__.py").exists()
+                        or {Path(p).resolve() for p in paths} != {expected}
+                        or {Path(p).resolve() for p in locations} != {expected}
+                        or not any(expected in Path(p).parents for p in records)):
+                    raise RuntimeError("Unverified file-less package/search path: "+name)
+                h.log("verified namespace package "+name+" -> "+str(expected))
+                continue
+            path = str(Path(filename).resolve())
+            if Path(path) not in (expected.with_suffix(".py"), expected/"__init__.py"):
+                raise RuntimeError("Imported module path differs from frozen checkout: "+name)
+            if path not in records or h.sha256(path) != records[path]["sha256"]:
+                raise RuntimeError("Imported evaluator differs from manifest: "+path)
+
+
 def import_evaluator(source, payload, h):
     """Import only hash-verified original code; never invoke its write stages."""
+    source = source.resolve()
     stage_path = source/"experiments/qwen25_base_isolation_v1/stages.py"
     records = {str(Path(x["path"]).resolve()): x for x in payload["code"].values()}
     if str(stage_path) not in records:
         raise RuntimeError("Evaluator checkout is not the frozen Qwen source")
     sys.path.insert(0, str(source/"experiments"))
     stage = importlib.import_module("qwen25_base_isolation_v1.stages")
-    for name, module in list(sys.modules.items()):
-        if name.split(".")[0] in ("qwen25_base_isolation_v1", "qera_original_a_isolation", "qera_diag_g_isolation"):
-            path = str(Path(module.__file__).resolve())
-            if path not in records or h.sha256(path) != records[path]["sha256"]:
-                raise RuntimeError("Imported evaluator differs from manifest: "+path)
+    audit_imported_modules(source, records, list(sys.modules.items()), h)
     return stage
 
 

@@ -2,6 +2,8 @@
 
 这是独立新实验入口，不更新旧 Qwen runner，不触碰 Llama 代码、输出、进程或共享 conda。
 
+当前发布 v1a 修复 Python namespace package 的 `__file__=None` 导入审计兼容性：核对包的唯一搜索目录属于冻结 checkout 且有 manifest 源码锚点，实际 `.py` 哈希校验不减弱。数学、数据与两种 PPL 实现不变。v1 在导入前置审计退出，尚无求解/PPL提交；v1a 使用新输出，不修改旧 `experiment.json` 的版本指纹，也不删除失败记录。
+
 ## 固定设置与范围
 
 - Qwen2.5-7B **Base**，原 MXINT3 / block32 / axis-1 的 Wq；QKV bias 不变。
@@ -23,13 +25,13 @@ Word 数据集、依赖、harness 和原 4096 协议必须一致；离线缺依�
 
 ## 离线部署
 
-上传 `qwen_gi_fp64_v1.zip` 到共享 BASE，解压出独立工具目录。ZIP 内包含所需冻结 helper；不要求替换之前两份工具包，也不要求服务器 git clone/pull。
+上传 `qwen_gi_fp64_v1a.zip` 到共享 BASE，解压出独立工具目录。ZIP 内包含所需冻结 helper；不要求替换之前两份工具包，也不要求服务器 git clone/pull。
 
 ```bash
 BASE=/share/home/tm902089733300000/a913520780/chengkang
 cd "$BASE"
-unzip -n qwen_gi_fp64_v1.zip
-QTOOLS="$BASE/qwen_gi_fp64_v1/tools/precision_audit"
+unzip -n qwen_gi_fp64_v1a.zip
+QTOOLS="$BASE/qwen_gi_fp64_v1a/tools/precision_audit"
 (cd "$QTOOLS" && sha256sum -c SHA256SUMS.qwen_gi_fp64)
 hostname
 nvidia-smi
@@ -44,8 +46,8 @@ pgrep -af 'qwen25_base_isolation_v1/run.py|qwen_a_fp64_target_v1.py|qwen_gi_fp64
 
 ```bash
 mkdir -p "$BASE/qera_diagnostics/logs"
-LOG="$BASE/qera_diagnostics/logs/qwen_gi_fp64_v1_pilot.log"
-nohup bash "$QTOOLS/run_qwen_gi_fp64_v1.sh" pilot --max-hours 2 > "$LOG" 2>&1 &
+LOG="$BASE/qera_diagnostics/logs/qwen_gi_fp64_v1a_pilot.log"
+nohup bash "$QTOOLS/run_qwen_gi_fp64_v1.sh" pilot --max-hours 2 >> "$LOG" 2>&1 &
 tail -n 100 -F "$LOG"
 ```
 
@@ -60,13 +62,13 @@ tail -n 100 -F "$LOG"
 Pilot 进程正常结束、GPU空闲后：
 
 ```bash
-LOG="$BASE/qera_diagnostics/logs/qwen_gi_fp64_v1_run.log"
+LOG="$BASE/qera_diagnostics/logs/qwen_gi_fp64_v1a_run.log"
 nohup bash "$QTOOLS/run_qwen_gi_fp64_v1.sh" run --max-hours 10 >> "$LOG" 2>&1 &
 tail -n 100 -F "$LOG"
 ```
 
 `run` 默认两种 PPL 全跑，顺序：剩余 DA/FA 求解 → token10配置 → word10配置。输出根独立：
-`$BASE/qera_diagnostics/qwen_gi_fp64_v1`。
+`$BASE/qera_diagnostics/qwen_gi_fp64_v1a`。
 
 服务器重开后重新设置 BASE/QTOOLS/LOG，重复**相同 run 命令**。不要同时启动第二个进程，新输出锁会拒绝并发写入。
 
@@ -80,7 +82,7 @@ tail -n 100 -F "$LOG"
 ## 结果与检查
 
 ```bash
-OUT="$BASE/qera_diagnostics/qwen_gi_fp64_v1"
+OUT="$BASE/qera_diagnostics/qwen_gi_fp64_v1a"
 cat "$OUT/evaluation/ppl_summary_wikitext2.csv"
 cat "$OUT/word_ppl/ppl_summary.csv"
 cat "$OUT/evaluation/status.json"

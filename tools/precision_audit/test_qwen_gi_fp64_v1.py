@@ -1,7 +1,10 @@
 import copy
 import hashlib
+import importlib
+import importlib.machinery
 from pathlib import Path
 import tempfile
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -150,6 +153,52 @@ class StorageTests(unittest.TestCase):
             new.evaluate([entry],manifest,out,"id",single,h,stop,stage)
             self.assertEqual(len(loads),count)
             self.assertEqual(canary.read_bytes(),b"unchanged")
+
+
+class ImportAuditTests(unittest.TestCase):
+    def setUp(self):
+        self.source = Path(__file__).resolve().parents[2]
+        self.name = "qera_diag_g_isolation.full_svd_v1"
+        self.folder = self.source/"experiments/qera_diag_g_isolation/full_svd_v1"
+        path = self.folder/"solver.py"
+        self.records = {str(path): single.file_record(path)}
+        spec = importlib.machinery.ModuleSpec(self.name, loader=None, is_package=True)
+        spec.submodule_search_locations = [str(self.folder)]
+        self.module = SimpleNamespace(__file__=None, __spec__=spec, __path__=[str(self.folder)])
+
+    def test_actual_namespace_and_source_module(self):
+        with patch.object(sys, "path", [str(self.source/"experiments"), *sys.path]):
+            namespace = importlib.import_module(self.name)
+            solver = importlib.import_module(self.name+".solver")
+        self.assertIsNone(namespace.__file__)
+        new.audit_imported_modules(self.source, self.records, [(self.name, namespace), (self.name+".solver", solver)], h)
+
+    def test_extra_namespace_search_path_rejected(self):
+        self.module.__path__.append(str(self.source))
+        with self.assertRaisesRegex(RuntimeError, "file-less"):
+            new.audit_imported_modules(self.source, self.records, [(self.name, self.module)], h)
+
+    def test_missing_spec_not_blindly_skipped(self):
+        self.module.__spec__ = None
+        with self.assertRaisesRegex(RuntimeError, "file-less"):
+            new.audit_imported_modules(self.source, self.records, [(self.name, self.module)], h)
+
+    def test_namespace_without_manifest_anchor_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "file-less"):
+            new.audit_imported_modules(self.source, {}, [(self.name, self.module)], h)
+
+    def test_real_source_hash_mismatch_rejected(self):
+        records = copy.deepcopy(self.records)
+        path = str(self.folder/"solver.py")
+        records[path]["sha256"] = "bad"
+        with self.assertRaisesRegex(RuntimeError, "differs from manifest"):
+            new.audit_imported_modules(self.source, records, [(self.name+".solver", SimpleNamespace(__file__=path))], h)
+
+    def test_wrong_source_location_rejected_even_if_manifest_listed(self):
+        path = self.source/"experiments/qera_diag_g_isolation/math_ops.py"
+        records = {str(path): single.file_record(path)}
+        with self.assertRaisesRegex(RuntimeError, "path differs"):
+            new.audit_imported_modules(self.source, records, [(self.name+".solver", SimpleNamespace(__file__=str(path)))], h)
 
 
 class WordTests(unittest.TestCase):
