@@ -12,7 +12,7 @@
 | A5：全模块 FA+GI/DG/GF 同根 FP64 | [full_a_all_precision_r8_v1.py](README_full_a_all_precision_r8_v1.md) | r8 六组完成；保存 rank64 因子 |
 | A5 扩展：四个 rank × token/word PPL | [full_a_all_ranks_dual_ppl_v1.py](README_full_a_all_ranks_dual_ppl_v1.md) | 已回收两套各14行汇总；原始控制文件待回收 |
 | DA 扩展：同根 FP64 × 四 rank × 双 PPL | [diag_a_fp64_dual_v1.py](README_diag_a_fp64_dual_v1.md) | 新实现，待服务器 doctor/pilot；不覆盖旧阶段 |
-| Qwen Full-A 只读诊断 | `qwen_full_a_audit_v1.py --help` | 异常未关闭，不自动修复 |
+| Qwen Full-A 只读诊断 | [qwen_full_a_audit_v2.py](README_qwen_a_diagnostic_v2.md) | v2修正版本记录口径；复用冻结v1数学函数，异常未关闭 |
 
 上述 FP64 实验仍使用既定根矩阵的数值，不是“原始 FP64 A 重新构造高精度 root”。四 rank 扩展复用 A5 因子，没有重新收集 A/G 或重做 SVD。token-PPL 与 4096 word-PPL 分开保存，不能相互换算或混合排名。结果见[总账](../../docs/research/PPL_SUMMARY.md)，故障与处理见[日志](../../docs/research/ISSUE_LOG.md)。
 

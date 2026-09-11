@@ -424,6 +424,18 @@ tail -n 60 -F "$LOG"
 - 本次同时纳入上一轮已完成的A5T/A5W总表文档更新；未改变任何旧工具payload字节。
 - 详细启动与续跑见 `tools/precision_audit/README_diag_a_fp64_dual_v1.md`。本地CPU测试不代表服务器已修复或实验完成。
 
+## 2026-09-11：Qwen inspect 回收与诊断版本门禁修复
+
+状态：inspect完成，Qwen数值根因尚待replay；v2仅修复独立诊断入口，不修原求解器或实验数据。
+
+- 用户回传：root/raw和所列源码哈希校验完成；root为FP32的18944×18944，有限、无零行、对角正，相对不对称度1.8559991818521334e-10。没有计算root奇异值/条件数，不能据此证明稳定可逆。
+- 发现v1 replay比较口径错误：manifest来自importlib.metadata.version，脚本却直接对比torch.__version__，导致2.3.0与2.3.0+cu121被误判。用户逐项核对八项distribution均match=True，runtime=2.3.0+cu121，CUDA12.1。
+- 新增qwen_full_a_audit_v2.py与独立shell；同来源核对全部八项依赖，另核对已确认的CUDA构建，真实不一致仍拒绝。复用哈希固定v1数学/读文件函数，不修改其字节，不改变torch版本字段、不伪造或重写manifest。
+- 原始A和root精度、固定FP32 SVD与逆求解比较协议不变；不重新收A/G、不跑PPL、不覆盖correction。Llama正在运行的旧工具目录与进程不触碰。
+- 部署保持离线上传新小包，不要求服务器clone/pull。此前precision_tools_25813e5包的SHA256SUMS带CRLF，导致Linux读取带回车文件名；脚本payload本身为LF。用户可在管道中过滤清单回车，不需重传旧包。新增.gitattributes清单LF约束，新包验证ZIP内原始行尾而非仅按splitlines解析。
+- 用户已回传Llama `DA PILOT COMPLETE`，BF16 word=7.552676109、62文档；不表示全224模块和全部DA PPL已完成。
+- 本地72项CPU测试通过，新增shell语法通过；覆盖版本口径、每项真实依赖变更拒绝、CUDA构建拒绝、旧helper不变及LF清单校验。真实Qwen GPU replay待用户运行。
+
 ## 新条目模板
 
 ```text
