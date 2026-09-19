@@ -1,5 +1,5 @@
 {
-  "version": "functional_gradient_step1_4090_model_parallel_v1",
+  "version": "functional_gradient_step1_4090_model_parallel_v2",
   "layers": [
     0,
     10,
@@ -88,7 +88,7 @@
   "workers": 1,
   "portability": {
     "parent_input_relative_tolerance": 1e-05,
-    "parent_S_relative_tolerance": 1e-05,
+    "parent_S_relative_tolerance": 0.0001,
     "device_split_layer": 16,
     "teacher_parameter_identity": "exact FP32 tensor hashes",
     "parent_source_read_only": true

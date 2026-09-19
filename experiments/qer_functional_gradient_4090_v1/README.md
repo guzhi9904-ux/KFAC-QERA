@@ -14,7 +14,9 @@
 
 目标 checkpoint 可以没有原服务器的 `DOWNLOAD_MANIFEST.json`，但必须通过 **全部 291 个 FP32 参数的逐项精确哈希校验** 和模型行为配置比较；缺少 manifest 会明确记录，不伪造相同来源。主要 Python 库版本必须与父实验一致；PyTorch 要求基础版本相同，记录 CUDA build、Python 和设备映射的变化。
 
-跨显卡不假设前向输出逐位相同。原两模块每个窗口的第一个旧标签重放 x 和 S，分别要求相对误差 ≤1e-5，并保存与原 hidden hash 是否相等。原 S/标签本身不改写，拟合仍直接使用原 S。原始共享权重 autograd 验收、SVD 重构、rank64 父补偿复核、FP32 部署误差和 KL 重复验收保留。若精确参数身份或数值重放失败，停止排查，不自动放宽阈值。
+跨显卡不假设前向输出逐位相同。原两模块每个窗口的第一个旧标签重放 x 和 S，分别要求相对误差 ≤1e-5 和 ≤1e-4，并保存与原 hidden hash 是否相等。原 S/标签本身不改写，拟合仍直接使用原 S。原始共享权重 autograd 验收（≤1e-5）、SVD 重构、rank64 父补偿复核、FP32 部署误差和 KL 重复验收保留。若精确参数身份或数值重放失败，停止排查，不自动放宽阈值。
+
+2026-09-19 经用户明确同意，plan 版本由 `functional_gradient_step1_4090_model_parallel_v1` 修订为 `functional_gradient_step1_4090_model_parallel_v2`：仅将跨硬件 `parent_S_relative_tolerance` 从 1e-5 改为 1e-4。依据是迁移诊断发现 A6000 与双卡 4090 的旧 S 重放存在小幅数值差异，而参数身份、输入门限及同机 autograd 检查通过。这是观察诊断结果后作出的、有记录的迁移验收修订，不是原门限下验收成功，也不能据此保证最终实验结论不受影响。其余 plan 设置逐项保持不变。源码目录和本地配置路径保留兼容名称；新版 plan/README 自动进入运行身份。必须使用新输出目录（本次 `run_04`）重新运行完整 pilot；旧失败记录和诊断均不能替代新版 pilot 验收。
 
 重放失败时保存 `modules/*/portability/wXX.failed.json`，包含实际误差、阈值和已完成的梯度审计。控制器在主日志中附上失败 worker 的日志路径及末尾异常。独立诊断工具 `tools/teacher_kl_migration/diagnose_parent_replay.py --config CONFIG --output NEW_DIAGNOSIS_DIR` 对两个父模块的全部八个窗口各重放第一个旧标签，输出诊断报告；它不构造候选、不修改阈值，也不会生成 pilot 验收。诊断必须使用空闲双卡，输出为配置中 output_parent 下的新目录；建议外部 `timeout 510s` 限制总耗时。
 
@@ -53,7 +55,7 @@ python -B experiments/qer_functional_gradient_4090_v1/configure.py \
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 bash experiments/qer_functional_gradient_4090_v1/run.sh \
   ../qer_4090_v1.json \
-  ../qera_runs/functional_gradient_4090_v1/run_01 pilot
+  ../qera_runs/functional_gradient_4090_v1/run_04 pilot
 ```
 
 先验证原两个模块，再跑 L0.q_proj、L0.gate_proj、L0.down_proj 的完整形状。它包括原 32 样本构造、两次 dense SVD、首条新样本的 17 个候选投影、五个 KL 及重放。CPU 测试不能替代这一阶段。日志在运行目录 `logs/`，出错同时保存模块状态。
