@@ -31,4 +31,4 @@ python -B tools/teacher_kl_migration/preflight_4090.py \
 3. 重放原两模块的参考前向/梯度/收缩，并测浅层、大 gate/down 模块的完整形状资源。跨 GPU 型号的浮点差异不能用删掉哈希校验或改标签来掩盖，应分别记录参数身份和数值重放误差。
 4. 通过数值、显存、主机内存和时间预算验收后，再执行固定 `{0,10,20,31}` 的 28 模块正式实验。
 
-当前交付为环境/身份检查工具；双卡运行适配及 GPU pilot 尚未完成。
+已新增 [`../../experiments/qer_functional_gradient_4090_v1/`](../../experiments/qer_functional_gradient_4090_v1/README.md) 的独立双卡候选运行版本；实际 GPU pilot 尚待执行。`parent_bundle.py` 负责私有迁移包的制作与逐文件校验解包，拒绝覆盖已有目录，不包含 SSH 凭据或实际私有资产。
