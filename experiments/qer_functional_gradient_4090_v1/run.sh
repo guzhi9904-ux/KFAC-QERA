@@ -15,4 +15,5 @@ PYTHON="${QER_PYTHON:-python}"
 "$PYTHON" -B "$HERE/test_suite.py"
 "$PYTHON" -B "$HERE/test_construction_fixture.py"
 "$PYTHON" -B "$HERE/test_portable.py"
+"$PYTHON" -B "$HERE/test_device_layout.py"
 exec "$PYTHON" -u -B "$HERE/controller.py" --output "$2" --stage "$3" --workers 1

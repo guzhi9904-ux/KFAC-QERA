@@ -6,6 +6,8 @@
 
 一个 worker、一个 FP32/eager teacher。embedding 和层 0–15 在逻辑 GPU 0；层 16–31、norm、lm_head 在逻辑 GPU 1。不是 DDP，也不是每张卡各加载一份 8B 模型。固定使用两张可见 4090，目标模块的统计与 FP64 计算在该模块所在设备执行；模型卸载后释放两卡缓存，再做 full-channel dense eig/SVD。
 
+共享 `model.rotary_emb` 显式放在 GPU 0；各层 RoPE 随层放置。首次前向前检查全部参数及包含非持久缓存的全部 buffer，并单独移动/检查 `original_inv_freq` Tensor 引用，保持频率精度和值不变。检查结果写入 `device_placement.json`。`test_device_layout.py --cuda` 使用随机四层小 Llama 复现旧设备错误并检验修复后的两卡前向、反传与 checkpoint；它不代替完整 8B pilot。
+
 四层 `{0,10,20,31}`、28 模块、rank 16/32/64/128、原 8×4 拟合标签、8×16 新标签、四种候选方向/校准方式及 None、rank64 全词表 KL 均继承原方案。17 个 Rx 在 CPU 保存，评分时逐个移到目标设备，减少显存驻留；不改变收缩顺序、精度、样本数或候选。
 
 独立运行身份同时包含本目录源码、借用的冻结父源码、固定 plan 和目标机本地配置。原目录保持只读。旧源码的字节哈希、父资产文件/张量哈希、实际部署残差身份继续核验。

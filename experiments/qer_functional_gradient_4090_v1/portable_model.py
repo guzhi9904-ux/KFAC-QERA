@@ -6,6 +6,7 @@ import platform
 import sys
 import time
 from config_identity import configuration_differences, json_snapshot
+from device_layout import model_device_map, align_and_check_devices
 from bridge import (CONFIG, EXP01, EXP03, PLAN, OFFICIAL, read, torch, mo, sha_file,
                     save_json, capture, hidden_forward, read_tensors, slug, clean)
 
@@ -32,14 +33,16 @@ class PortableModel:
     def load_model(self):
         if self.model is not None: return
         from transformers import AutoModelForCausalLM
-        mapping = {'model.embed_tokens': 0, 'model.norm': 1, 'lm_head': 1}
-        mapping.update({f'model.layers.{i}': int(i >= 16) for i in range(32)})
+        mapping = model_device_map()
         self.device_map = mapping
         with self.timed('load_model', device_map=mapping):
             self.model = AutoModelForCausalLM.from_pretrained(self.config['model'], torch_dtype=torch.float32,
                 attn_implementation='eager', local_files_only=True, trust_remote_code=False,
                 low_cpu_mem_usage=True, device_map=mapping)
             self.model.eval(); self.model.requires_grad_(False); self.model.config.use_cache = False
+            placement = align_and_check_devices(self.model, mapping)
+            save_json(self.root/'device_placement.json', dict(identity=self.identity, **placement))
+            print('DEVICE CHECK PASS: shared RoPE on cuda:0; all parameters and buffers checked', flush=True)
         expected = read(EXP03/'teacher_identity.json')
         # Compare all behavior-relevant config fields, allowing provenance/version/cache metadata only.
         actual_config = json_snapshot(self.model.config.to_dict())
