@@ -5,6 +5,7 @@ from pathlib import Path
 import platform
 import sys
 import time
+from config_identity import configuration_differences, json_snapshot
 from bridge import (CONFIG, EXP01, EXP03, PLAN, OFFICIAL, read, torch, mo, sha_file,
                     save_json, capture, hidden_forward, read_tensors, slug, clean)
 
@@ -41,10 +42,8 @@ class PortableModel:
             self.model.eval(); self.model.requires_grad_(False); self.model.config.use_cache = False
         expected = read(EXP03/'teacher_identity.json')
         # Compare all behavior-relevant config fields, allowing provenance/version/cache metadata only.
-        actual_config = self.model.config.to_dict()
-        ignored = {'_name_or_path', 'transformers_version', 'torch_dtype', 'use_cache', '_attn_implementation_autoset'}
-        differences = {k: (v, actual_config.get(k)) for k, v in expected['config'].items()
-                       if k not in ignored and not k.startswith('_attn') and actual_config.get(k) != v}
+        actual_config = json_snapshot(self.model.config.to_dict())
+        differences = configuration_differences(expected['config'], actual_config)
         assert not differences, ('Model configuration mismatch', differences)
         with self.timed('teacher_tensor_identity'):
             hashes = {}

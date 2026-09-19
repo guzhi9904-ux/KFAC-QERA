@@ -20,6 +20,33 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(self.root.parent, Path(tempfile.gettempdir()).resolve())
         self.addCleanup(self.temp.cleanup)
 
+    def test_config_saved_integer_keys_and_reload(self):
+        from config_identity import configuration_differences, json_snapshot
+        live = {'id2label': {0: 'LABEL_0', 1: 'LABEL_1'}, 'hidden_size': 4096,
+                'rope_scaling': {'rope_type': 'llama3', 'factor': 8.0}}
+        saved = json.loads(json.dumps(live))
+        self.assertNotEqual(live, saved)  # The precise failing comparison.
+        self.assertEqual(configuration_differences(saved, live), {})
+        record = {'config': json_snapshot(live), 'device_map': {'model.layers.0': 0}}
+        path = self.root/'teacher_identity.json'
+        path.write_text(json.dumps(record), encoding='utf-8')
+        self.assertEqual(json.loads(path.read_text(encoding='utf-8')), record)
+
+    def test_config_real_changes_remain_rejected(self):
+        from config_identity import configuration_differences
+        expected = {'id2label': {'0': 'LABEL_0'}, 'hidden_size': 4096,
+                    'rope_scaling': {'rope_type': 'llama3', 'factor': 8.0}}
+        actual = {'id2label': {0: 'WRONG'}, 'hidden_size': 2048,
+                  'rope_scaling': {'rope_type': 'llama3', 'factor': 4.0}}
+        self.assertEqual(set(configuration_differences(expected, actual)),
+                         {'id2label', 'hidden_size', 'rope_scaling'})
+
+    def test_real_llama_config_json_roundtrip(self):
+        from transformers import LlamaConfig
+        from config_identity import configuration_differences, json_snapshot
+        live = LlamaConfig().to_dict()
+        self.assertEqual(configuration_differences(json_snapshot(live), live), {})
+
     def test_runtime_import_and_source_identity(self):
         config = self.root/'config.json'
         config.write_text(json.dumps({'schema': 1, 'assets': str(self.root/'assets'),
