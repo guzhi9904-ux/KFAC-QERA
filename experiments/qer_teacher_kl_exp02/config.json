@@ -1,0 +1,22 @@
+{
+  "parent_identity": "1cf6aaa613ec828a857e279a33878f550dce4d340ad04053ce9b59b960d15b28",
+  "parent_output": "/data2/cck/KFAC-QERA/runs/qer_teacher_kl_exp01_v2/20260918_r1",
+  "parent_code": "/home/cck/projects/qer_teacher_kl_exp01_v2_r1",
+  "extension_identity": "fd5032f4334bcd16217e7c7b1ecb50ce5389475d3b405aaa30791f2ef6c07fa7",
+  "extension_output": "/data2/cck/KFAC-QERA/runs/qer_teacher_kl_alpha_extension/20260918_r1",
+  "gpus": 1,
+  "host_memory_GiB": 64,
+  "N": 8,
+  "K": 64,
+  "L": 2048,
+  "T": 2047,
+  "bootstrap_count": 2000,
+  "bootstrap_seed": 2026091802,
+  "ratio_denominator_floor": 1e-12,
+  "score_error_band_fraction_q0": 0.1,
+  "benefit_error_band_fraction_delta0": 0.2,
+  "gamma_difference_band": 0.05,
+  "sep_implementation_policy": "Benchmark two complete direct and gradient-Gram contractions at pilot k=0, verify <=1e-8, select lower median time per module, freeze before formal replay",
+  "A_diag": "FP64 uncentered full-channel Gram on all 8x2048 diagnostic positions, no regularization",
+  "numeric_version": "exp02_fp64_full_channels_v1"
+}

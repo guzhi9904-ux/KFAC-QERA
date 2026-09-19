@@ -1,0 +1,13 @@
+{
+  "identity.json": "07e41de2fd15106e770ce98cc9f2d43cf157c560b84828a9897b9193a3adcdfa",
+  "manifest.json": "39d2dea4e051aec82715fed0949fd6e4d6256baf54cf6c43e90ba5eab317652b",
+  "evaluation_freeze.json": "36395c316ec8ebfc4aa232a237ee9bd71e966a7c91d513ce2030b4380377441a",
+  "data/fit_sample_manifest.json": "e209d073b628a8a84def8b9062a1641302818f933f5efab63f7ab32f514c8d9b",
+  "data/fit_windows.json": "a434132dc2c2f9543782779656ecf8a6f644721abb6e34a7a3697a5fa4bf0bc7",
+  "analysis.json": "8b1554ff313b6533f81535cc580f206c6648743f577ab5d0252b8f976e988a78",
+  "fit_history.csv": "448be52922372fae19ab230737de200254ede3705c78f178a2f4b810df9b5cde",
+  "teacher_identity.json": "dfa2f19829bd36c49e143490a9f7e118c6debd17ae43d4ec463e30f69802192a",
+  "environment.json": "3a06a756a52810eb33148a38570defff4a99e6f08ce22b09fc6e153e2883eff6",
+  "eval/model__layers__10__self_attn__v_proj_metric.json": "b4c1e14be99fba78377b1ab1055be52b57bc3a24715b8e4020e22f680f4ae6e9",
+  "eval/model__layers__31__self_attn__q_proj_metric.json": "88e81d38f03da9f4c4df18e5ae81736f9326d54823043846a5aed84ef2ceda13"
+}

@@ -1,0 +1,17 @@
+{
+  "protocol": "qer_teacher_kl_exp01_v2",
+  "model": "/data1/cck/models/Llama-3.1-8B/ms-snapshot-20260916",
+  "calibration": "/data1/cck/datasets/prepared/Llama-3.1-8B/qera-bd7fc86-ctx2048-workers8/calibration.safetensors",
+  "wikitext": "/data1/cck/datasets/raw/wikitext2-token/b08601e04326c79dfdd32d625aee71d232d685c3/dataset",
+  "qera": "/home/cck/projects/vendor/QERA-bd7fc86",
+  "gpus": 1,
+  "checkpoint_suffix": true,
+  "cpu_threads": 8,
+  "vocab_chunk": 128,
+  "numerics": "FP32 eager teacher; TF32/autocast/cache disabled; FP64 probability/reduction/solve",
+  "collection": "256 SlimPajama windows, 2048 tokens, two input hooks, FP32 Gram / FP64 sum",
+  "sampling": "20260918 independent window/replicate streams; FP64 full-vocabulary inverse CDF",
+  "K": [4, 16, 64],
+  "alpha": [0, 0.05, 0.1, 0.2],
+  "additional_alpha": [0.025, 0.0125, 0.00625]
+}

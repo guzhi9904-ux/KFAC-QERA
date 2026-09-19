@@ -1,0 +1,27 @@
+{
+  "version": "exp03_diagnosis_r1",
+  "exp3_code": "/home/cck/projects/qer_teacher_kl_exp03_r1",
+  "exp3_output": "/data2/cck/KFAC-QERA/runs/qer_teacher_kl_exp03/20260918_r1",
+  "exp3_identity": "34fd1ee3b82701316a3ce90808b911402f197b90538b97a7c0060a6ec47dc388",
+  "parent_code": "/home/cck/projects/qer_teacher_kl_exp01_v2_r1",
+  "modules": [
+    "model.layers.10.self_attn.v_proj",
+    "model.layers.31.self_attn.q_proj"
+  ],
+  "L": 2048,
+  "T": 2047,
+  "N": 8,
+  "K_old": 4,
+  "K_new": 16,
+  "rank": 64,
+  "fit_seed": 2026091804,
+  "bootstrap_seed": 2026091805,
+  "bootstrap_count": 2000,
+  "ratio_denominator_floor": 1e-12,
+  "tau": 0.02,
+  "contraction_tolerance": 1e-10,
+  "J_replay_tolerance": 1e-08,
+  "S_autograd_relative_tolerance": 1e-05,
+  "gpus": 1,
+  "host_memory_GiB": 64
+}

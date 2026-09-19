@@ -8,3 +8,11 @@
 *.json text eol=lf
 SHA256SUMS* text eol=lf
 *.png binary
+
+# Frozen experiment identities hash source bytes, including line endings.
+experiments/qer_teacher_kl_exp01/** -text
+experiments/qer_teacher_kl_alpha_extension/** -text
+experiments/qer_teacher_kl_exp02/** -text
+experiments/qer_teacher_kl_exp03/** -text
+experiments/qer_teacher_kl_exp03_diagnosis/** -text
+experiments/qer_functional_gradient_step1/** -text

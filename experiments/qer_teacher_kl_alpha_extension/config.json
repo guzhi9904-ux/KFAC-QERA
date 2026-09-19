@@ -1,0 +1,11 @@
+{
+  "parent_identity": "1cf6aaa613ec828a857e279a33878f550dce4d340ad04053ce9b59b960d15b28",
+  "parent_output": "/data2/cck/KFAC-QERA/runs/qer_teacher_kl_exp01_v2/20260918_r1",
+  "parent_code": "/home/cck/projects/qer_teacher_kl_exp01_v2_r1",
+  "gpus": 1,
+  "host_memory_GiB": 64,
+  "new_alpha": [0.3, 0.5, 0.75, 1.0],
+  "pilot_relative_tolerance": 0.01,
+  "baseline": "Frozen parent summary.csv q_KL; window-specific q0 from original three small-alpha points",
+  "work": "Forward-only KL; no A/G collection, SVD, quantizer generation, labels or MC backward"
+}
