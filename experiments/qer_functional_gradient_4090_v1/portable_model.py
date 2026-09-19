@@ -91,7 +91,11 @@ class PortableModel:
         assert mo.digest_tensor(old['x']) == meta['input_hash']
         assert meta['token_hash'] == mo.digest_tensor(self.fit['input_ids'][c])
         x_error = mo.relative(x.cpu(), old['x'])
-        assert x_error <= PLAN['portability']['parent_input_relative_tolerance'], ('Parent input replay', x_error)
+        if not x_error <= PLAN['portability']['parent_input_relative_tolerance']:
+            failure = dict(passed=False, identity=self.identity, module=self.name, window=c,
+                x_relative_error=x_error, tolerances=PLAN['portability'], failed_check='Parent input replay')
+            save_json(path.with_suffix('.failed.json'), failure)
+            raise AssertionError(('Parent input replay', x_error, 'See '+str(path.with_suffix('.failed.json'))))
         labels, lm = self.old_label(c, 0)
         with self.timed('cross_hardware_parent_S_replay', module=self.name, window=c):
             g, audit = self.gradient(self.name, self.fit['input_ids'][c:c+1], reference, x, labels, weight_check=(c == 0))
@@ -101,7 +105,15 @@ class PortableModel:
             with safe_open(old_row['path'], framework='pt') as f: old_s = f.get_tensor('S')
             assert mo.digest_tensor(old_s) == old_row['S_hash'] and old_row['label_hash'] == lm['label_hash']
             s_error = mo.relative(s.cpu(), old_s)
-            assert s_error <= PLAN['portability']['parent_S_relative_tolerance'], ('Parent S replay', s_error)
+            if not s_error <= PLAN['portability']['parent_S_relative_tolerance']:
+                failure = dict(passed=False, identity=self.identity, module=self.name, window=c,
+                    x_relative_error=x_error, S_relative_error=s_error, gradient_audit=audit,
+                    tolerances=PLAN['portability'], failed_check='Parent S replay',
+                    label_hash=lm['label_hash'], parent_S_hash=old_row['S_hash'])
+                save_json(path.with_suffix('.failed.json'), failure)
+                raise AssertionError(('Parent S replay', s_error,
+                    'limit', PLAN['portability']['parent_S_relative_tolerance'],
+                    'See '+str(path.with_suffix('.failed.json'))))
         save_json(path, dict(passed=True, identity=self.identity, module=self.name, window=c,
             label_hash=lm['label_hash'], parent_x_file_sha256=sha_file(source_x), parent_S_hash=old_row['S_hash'],
             x_relative_error=x_error, S_relative_error=s_error, gradient_audit=audit,

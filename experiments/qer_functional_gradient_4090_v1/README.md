@@ -1,6 +1,6 @@
 # Functional-gradient step 1：双卡 RTX 4090 独立版本
 
-这是在原 613 冻结实现之外新增的运行版本，继续原实验一/三的既有结果。代码和 CPU 测试已准备好；**实际两张 4090 的完整形状 pilot 尚未执行，不能称为 GPU 验收通过。** 不会自动提交作业、连接 SSH、申请 GPU 或启动正式实验。
+这是在原 613 冻结实现之外新增的运行版本，继续原实验一/三的既有结果。代码和 CPU 测试已准备好；**实际两张 4090 的完整形状 pilot 尚未通过，不能称为 GPU 验收通过。** 不会自动提交作业、连接 SSH、申请 GPU 或启动正式实验。
 
 ## 执行方式与科学设置
 
@@ -15,6 +15,8 @@
 目标 checkpoint 可以没有原服务器的 `DOWNLOAD_MANIFEST.json`，但必须通过 **全部 291 个 FP32 参数的逐项精确哈希校验** 和模型行为配置比较；缺少 manifest 会明确记录，不伪造相同来源。主要 Python 库版本必须与父实验一致；PyTorch 要求基础版本相同，记录 CUDA build、Python 和设备映射的变化。
 
 跨显卡不假设前向输出逐位相同。原两模块每个窗口的第一个旧标签重放 x 和 S，分别要求相对误差 ≤1e-5，并保存与原 hidden hash 是否相等。原 S/标签本身不改写，拟合仍直接使用原 S。原始共享权重 autograd 验收、SVD 重构、rank64 父补偿复核、FP32 部署误差和 KL 重复验收保留。若精确参数身份或数值重放失败，停止排查，不自动放宽阈值。
+
+重放失败时保存 `modules/*/portability/wXX.failed.json`，包含实际误差、阈值和已完成的梯度审计。控制器在主日志中附上失败 worker 的日志路径及末尾异常。独立诊断工具 `tools/teacher_kl_migration/diagnose_parent_replay.py --config CONFIG --output NEW_DIAGNOSIS_DIR` 对两个父模块的全部八个窗口各重放第一个旧标签，输出诊断报告；它不构造候选、不修改阈值，也不会生成 pilot 验收。诊断必须使用空闲双卡，输出为配置中 output_parent 下的新目录；建议外部 `timeout 510s` 限制总耗时。
 
 ## 1. 迁移并核验父资产
 

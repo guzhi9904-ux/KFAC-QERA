@@ -15,6 +15,7 @@ from bridge import HERE,read,PLAN,sha_file,save_json,atomic_bytes,source_identit
 from bridge import CONFIG,cgroup_memory
 from functional_math import small_checks
 from functional_analysis import test_statistics
+from failure_reporting import worker_failure
 
 
 def initialize(root):
@@ -50,23 +51,23 @@ def assignments(modules,workers,shapes):
 
 def run_workers(root,phase,modules,workers,devices,deadline):
     shapes=read(Path(PLAN['exp3_output'])/'teacher_identity.json')['tensor_hashes']
-    slots=assignments(modules,workers,shapes);jobs=[];logs=[]
+    slots=assignments(modules,workers,shapes);jobs=[];logs=[];log_paths=[]
     save_json(root/'workers'/f'{phase}_assignment.json',dict(modules=modules,slots=slots,
         rule='Greedy fixed dimension/depth cost in frozen module order; no observed effect used',devices=devices))
     try:
         for i,names in enumerate(slots):
             if not names:continue
             path=root/'logs'/f'{phase}_{i}_{int(time.time())}.log';path.parent.mkdir(parents=True,exist_ok=True)
-            log=path.open('w');logs.append(log)
+            log=path.open('w');logs.append(log);log_paths.append(path)
             env=dict(os.environ,CUDA_VISIBLE_DEVICES=','.join(devices),PYTHONDONTWRITEBYTECODE='1')
             cmd=[sys.executable,'-u','-B',str(HERE/'worker.py'),'--output',str(root),'--phase',phase,
                  '--worker-id',str(i),'--deadline',str(deadline),'--modules',*names]
             jobs.append(subprocess.Popen(cmd,env=env,stdout=log,stderr=subprocess.STDOUT))
         while any(p.poll() is None for p in jobs):
-            if any(p.poll() not in (None,0) for p in jobs):raise RuntimeError(f'{phase}: worker failed; inspect module status/logs')
+            if any(p.poll() not in (None,0) for p in jobs):raise worker_failure(phase,jobs,log_paths)
             if time.time()>deadline+120:raise RuntimeError('Budget overrun beyond atomic-unit grace period')
             time.sleep(2)
-        if any(p.returncode for p in jobs):raise RuntimeError(f'{phase}: worker failed')
+        if any(p.returncode for p in jobs):raise worker_failure(phase,jobs,log_paths)
     finally:
         for p in jobs:
             if p.poll() is None:p.terminate()
