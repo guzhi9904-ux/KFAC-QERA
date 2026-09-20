@@ -1,6 +1,13 @@
 """Fail closed on teacher, quantizer, tokenizer, corpus and history identities."""
 from pathlib import Path
+import hashlib
 from common import PLAN, read, read_tensors, sha_file, mo, require, slug, digest
+
+
+def verify_quantizer_source(path,expected):
+    # Match Exp1.official exactly: its recorded digest normalizes CRLF to LF.
+    actual=hashlib.sha256(Path(path).read_bytes().replace(b'\r\n',b'\n')).hexdigest()
+    require(actual==expected,'Official quantizer source differs')
 
 
 def inventory(config):
@@ -67,7 +74,7 @@ def inventory(config):
         require(qm['identity']==qi['identity'] and digest({k:v for k,v in qi.items() if k!='identity'})==qi['identity'],'Invalid quantized source identity')
         quantizer=base/'vendor/quantize/quantizers/mxint.py'
         if not quantizer.exists():quantizer=base/'vendor/src/qera/quantize/quantizers/mxint.py'
-        pin(quantizer,qm['quantizer_hash'])
+        verify_quantizer_source(quantizer,qm['quantizer_hash']);pin(quantizer)
         for key in ('W0','Wq'): require(mo.digest_tensor(qt[key]) == qm[key+'_hash'], 'Quantized tensor hash mismatch')
         require(qm['W0_hash'] == read(old/'teacher_identity.json')['tensor_hashes'][name+'.weight']['hash'], 'Wrong teacher E')
         fp = old/'factors'/slug(name)/'marginal_solve.safetensors'

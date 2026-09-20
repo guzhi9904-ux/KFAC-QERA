@@ -72,4 +72,14 @@ class ExactTests(unittest.TestCase):
             def fail(worker,item):raise RuntimeError('intentional worker error')
             with self.assertRaisesRegex(RuntimeError,'intentional worker error'):offline_map(e,[0,1],fail)
 
+    def test_quantizer_digest_matches_parent_line_ending_contract(self):
+        import hashlib
+        from assets import verify_quantizer_source
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)/'quantizer.py';original=b'x = 1\ny = 2\n';expected=hashlib.sha256(original).hexdigest()
+            for raw in (original,original.replace(b'\n',b'\r\n')):
+                p.write_bytes(raw);verify_quantizer_source(p,expected)
+            p.write_bytes(b'x = 2\ny = 2\n')
+            with self.assertRaises(RuntimeError):verify_quantizer_source(p,expected)
+
 if __name__=='__main__':unittest.main(verbosity=2)
