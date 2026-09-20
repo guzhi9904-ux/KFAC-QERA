@@ -1,0 +1,71 @@
+{
+  "version": "qer_kronecker_sketch_sample_v1",
+  "namespace": "qer-ksample-v1",
+  "parent_identity": "34fd1ee3b82701316a3ce90808b911402f197b90538b97a7c0060a6ec47dc388",
+  "geometry_history_identity": "0ea6fc39814660218e8a97fcea636a7ac31461e3206b232eb698fa22c9902161",
+  "module": "model.layers.31.self_attn.q_proj",
+  "shape": [
+    4096,
+    4096
+  ],
+  "rank": 64,
+  "L": 2048,
+  "T": 2047,
+  "budgets": {
+    "S0": [
+      8,
+      4
+    ],
+    "S1": [
+      8,
+      16
+    ],
+    "S2": [
+      32,
+      4
+    ]
+  },
+  "fit_samples": 224,
+  "eval_windows": 16,
+  "eval_labels": 16,
+  "methods": [
+    "Marginal",
+    "Token-joint",
+    "Sequence-one-step",
+    "Full-fit"
+  ],
+  "token_rounds": 3,
+  "ALS_max_iterations": 20,
+  "ALS_relative_J_tolerance": 1e-06,
+  "ALS_product_tolerance": 0.0001,
+  "ALS_stable_rounds": 2,
+  "eta_A": 0.001,
+  "eta_G": 0.001,
+  "condition_max": 100000000.0,
+  "bootstrap_count": 2000,
+  "practical_threshold": 0.02,
+  "denominator_floor": 1e-12,
+  "minimum_free_GiB": 128,
+  "disk_limit_GiB": 112,
+  "disk_headroom_GiB": 12,
+  "pilot_allocated_GiB": 21.5,
+  "host_memory_fraction": 0.85,
+  "tolerances": {
+    "autograd": 1e-05,
+    "parent_x": 1e-05,
+    "parent_S": 0.0001,
+    "contraction": 1e-10,
+    "symmetry": 1e-10,
+    "PSD_relative": 1e-10,
+    "root": 1e-10,
+    "svd": 1e-08,
+    "deployment": 0.0001,
+    "self_KL": 1e-10,
+    "KL_repeat_absolute": 1e-12,
+    "KL_repeat_relative": 1e-07,
+    "KL_path_relative": 0.02,
+    "absolute_scalar_floor": 1e-12
+  },
+  "deployment": "FP32 Wq + FP32(C64), where C64=P64@Q64; exact parent Exp3 dense path",
+  "reference_implementation": "Exact empirical contractions, no full H; raw J can be negative; no evaluation-based choice"
+}
