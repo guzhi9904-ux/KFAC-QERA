@@ -122,6 +122,7 @@ class Context:
             write(path, manifest); write(self.root / 'frozen_config.json', self.config)
             shutil.copyfile(HERE / 'protocol.md', self.root / 'protocol.md')
         self.resources_path = self.root / 'resources/timings.json'
+        self.last_storage_scan=0.;self.output_bytes=0;self.output_peak_bytes=0
         self.resources = read(self.resources_path) if self.resources_path.exists() else {'stages': [], 'sessions': []}
         self.resources['sessions'].append(dict(pid=os.getpid(), started=time.time()))
         self.teacher = Teacher(self.config, self.root, self.identity, self.timed)
@@ -162,11 +163,21 @@ class Context:
                    io=psutil.Process().io_counters()._asdict())
         if torch.cuda.is_initialized():
             row['peak_GPU_GiB'] = [torch.cuda.max_memory_allocated(i) / 2**30 for i in range(2)]
+        if time.monotonic()-self.last_storage_scan>60:
+            self.output_bytes=sum(p.stat().st_size for p in self.root.rglob('*') if p.is_file())
+            self.output_peak_bytes=max(self.output_peak_bytes,self.output_bytes);self.last_storage_scan=time.monotonic()
+        row.update(output_GiB=self.output_bytes/2**30,observed_peak_output_GiB=self.output_peak_bytes/2**30)
         return row
 
     @contextlib.contextmanager
     def timed(self, stage, **details):
         self.check(); start = time.monotonic(); passed = False
+        devices=([details['device']] if 'device' in details else list(range(torch.cuda.device_count()))) if torch.cuda.is_initialized() else []
+        events={}
+        for device in devices:
+            with torch.cuda.device(device):
+                first=torch.cuda.Event(enable_timing=True);last=torch.cuda.Event(enable_timing=True)
+                first.record();events[str(device)]=(first,last)
         log('START', stage=stage, **details)
         try:
             yield
@@ -175,8 +186,13 @@ class Context:
             if torch.cuda.is_initialized():
                 for d in ([details['device']] if 'device' in details else range(torch.cuda.device_count())):
                     torch.cuda.synchronize(d)
+            intervals={}
+            for device,(first,last) in events.items():
+                with torch.cuda.device(int(device) if device.isdigit() else device):
+                    last.record();last.synchronize();intervals[device]=first.elapsed_time(last)/1000
             row = dict(stage=stage, wall_seconds=time.monotonic()-start, passed=passed,
-                       resources=self.resource_snapshot(), **details)
+                       resources=self.resource_snapshot(),CUDA_event_interval_seconds=intervals,
+                       CUDA_timing_note='elapsed device event interval includes transfer/idle; not summed kernel active time',**details)
             with self.lock:
                 self.resources['stages'].append(row)
                 self.resources['sessions'][-1]['active_seconds'] = time.monotonic()-self.started

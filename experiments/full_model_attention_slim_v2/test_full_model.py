@@ -14,6 +14,16 @@ class FullModelTests(unittest.TestCase):
     def test_scalar_solver_matches_parent(self):
         self.assertTrue(mathematical_checks()['A_only_scalar_parent']['passed'])
 
+    def test_general_weighted_solver_matches_parent(self):
+        from solve import solve_one,roots
+        torch.manual_seed(73)
+        x=torch.randn(21,13,dtype=torch.float64);z=torch.randn(21,10,dtype=torch.float64)
+        a=x.T@x;g=z.T@z;w0=torch.randn(10,13);wq=w0+.02*torch.randn(10,13)
+        error=w0.double()-wq.double()
+        result,audit=solve_one(error,a,g,w0,wq,rank=4,prepared=roots(a))
+        reference,_=sm.parent.weighted_svd(error,a,g,4,.001,.001)
+        self.assertTrue(compare(result['P64']@result['Q64'],reference['C64'],1e-10)['passed'])
+
     def test_frozen_candidate_budgets(self):
         count={s:sum(method(s,k) is not None for i in range(32) for k in KINDS) for s in STATES}
         self.assertEqual(count,dict(Teacher=0,C0=0,C1=96,C2=224,C3=224,C4=224))

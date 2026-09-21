@@ -111,7 +111,24 @@ def c4_data(ctx, tokenizer):
 def task_dict(ctx):
     sys.path.insert(0, ctx.config['harness'])
     from lm_eval.tasks import get_task_dict, TaskManager
-    return get_task_dict(list(TASKS), task_manager=TaskManager())
+    import datasets
+    transfer=ctx.root/'data/arc_easy_transfer'
+    original=datasets.load_dataset
+    def frozen_load(path,name=None,*args,**kwargs):
+        if path=='allenai/ai2_arc' and name=='ARC-Easy' and (transfer/'source.json').exists():
+            source=read(transfer/'source.json')
+            require(source['repo']=='allenai/ai2_arc' and source['config']=='ARC-Easy' and
+                    source['revision']=='210d026faf9955653af8916fad021475a3f00453','ARC-Easy source identity differs')
+            splits={}
+            for split,row in source['files'].items():
+                file=transfer/row['local_file'];require(sha(file)==row['sha256'],'Transferred task file changed')
+                splits[split]=datasets.Dataset.from_parquet(str(file),cache_dir=str(ctx.root/'data/task_cache'))
+            require(set(splits)=={'train','test','validation'},'ARC-Easy standard splits incomplete')
+            return datasets.DatasetDict(splits)
+        return original(path,name,*args,**kwargs)
+    datasets.load_dataset=frozen_load
+    try:return get_task_dict(list(TASKS), task_manager=TaskManager())
+    finally:datasets.load_dataset=original
 
 def task_evidence(task, metric):
     docs = task.eval_docs; h = hashlib.sha256()
@@ -132,9 +149,11 @@ def freeze_tasks(ctx):
     paths = [root/'lm_eval/evaluator.py', root/'lm_eval/models/huggingface.py']
     for folder in ('hellaswag','piqa','winogrande','arc'):
         paths.extend(p for p in (root/'lm_eval/tasks'/folder).rglob('*') if p.suffix in ('.yaml','.py'))
+    transfer=ctx.root/'data/arc_easy_transfer/source.json'
     return dict(tasks=result, harness_commit='3823cfec41c016378acbcc8616dd1ac92c15edd4',
         source={str(p.relative_to(root)): sha(p) for p in paths}, num_fewshot=0, max_length=4096,
-        chat_template=False, batch_size=1, limit=None, response_cache='disabled', precision='FP32')
+        chat_template=False, batch_size=1, limit=None, response_cache='disabled', precision='FP32',
+        offline_dataset_transfer=read(transfer) if transfer.exists() else None)
 
 def prepare(ctx):
     if ctx.done('data/complete.json'):
