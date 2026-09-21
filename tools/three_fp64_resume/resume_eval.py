@@ -25,6 +25,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('config',type=Path);parser.add_argument('output',type=Path)
     parser.add_argument('--total-hours',type=float,required=True,help='Cumulative allowance INCLUDING historical active time, not extra hours')
+    parser.add_argument('--test-windows',type=int,choices=(16,32),help='Evaluate a fixed prefix of test windows; write a separate subset report, never full completion')
     args=parser.parse_args();root=args.output.resolve();config=read(args.config)
     frozen=read(root/'manifest.json');require(identity(config)==frozen,'Frozen science/config changed; do not edit original config')
     if (root/'complete.json').exists():
@@ -42,12 +43,17 @@ def main():
             save_json(receipt,dict(identity=ident,stage='evaluate',started_utc=time.strftime('%FT%TZ',time.gmtime()),
                 pid=os.getpid(),active_seconds_before=self.base,original_config_hours=config['budget_hours'],
                 requested_total_hours=args.total_hours,manifest_sha256=sha_file(root/'manifest.json'),
-                launcher_sha256=sha_file(__file__),changes='Runtime allowance only; no time reset, no candidate/config/threshold changes'))
+                launcher_sha256=sha_file(__file__),test_windows=args.test_windows,
+                changes='Runtime allowance and optional explicitly labelled test subset; no time reset, no candidate/config/threshold changes'))
             self.data.update(runtime_budget_hours=args.total_hours,runtime_budget_receipt=str(receipt))
             self.flush();print('EVALUATION_RESUME',dict(used_hours=self.base/3600,total_hours=args.total_hours),flush=True)
     runner.Resources=ExtendedResources
     sys.argv=[str(ENTRY/'runner.py'),str(args.config.resolve()),str(root),'evaluate']
-    runner.main()
+    if args.test_windows is None:
+        runner.main()
+    else:
+        from subset_eval import limited_test
+        with limited_test(args.test_windows):runner.main()
 
 
 if __name__=='__main__':main()
