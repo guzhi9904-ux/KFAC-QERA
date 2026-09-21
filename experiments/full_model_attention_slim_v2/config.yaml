@@ -1,0 +1,21 @@
+{
+  "base": "/share/home/tm902089733300000/a913520780/chengkang",
+  "run": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/full_model_attention_slim_v2/run_01",
+  "assets": "/share/home/tm902089733300000/a913520780/chengkang/teacher_kl_assets/parents_v1",
+  "model": "/share/home/tm902089733300000/a913520780/chengkang/modelzoo/Meta-Llama-3.1-8B",
+  "ko_run": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/ko_increment_v1/run_01",
+  "calibration": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/llama3.1-8b-original-a-isolation/data/calibration.safetensors",
+  "wikitext2": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/llama3.1-8b-original-a-isolation/data/wikitext2.safetensors",
+  "validation": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/multimodule_three_fp64_v1/run_01/data/validation.safetensors",
+  "harness": "/share/home/tm902089733300000/a913520780/chengkang/QERA-harness-3823cfe",
+  "qera_source": "/share/home/tm902089733300000/a913520780/chengkang/QERA-official-bd7fc86",
+  "profile": "dual4090", "cpu_threads": 8, "vocab_chunk": 64,
+  "n": 256, "length": 2048, "rank": 64, "eta_A": 0.001, "eta_G": 0.001,
+  "base_seed": 20260921, "pass_a_group_layers": 8, "pass_b_group_layers": 4,
+  "checkpoint_every": 32, "downstream_max_length": 4096, "downstream_batch_size": 1,
+  "personal_free_GiB_minimum": 200,
+  "quota_evidence": "User confirmed in this task on 2026-09-21 that personal remaining storage is at least 200 GiB; shared df is not quota evidence",
+  "c4_dataset": "allenai/c4", "c4_config": "en", "c4_windows": 128,
+  "c4_revision": "resolve-once-before-scoring", "c4_special_tokens": true,
+  "scientific_settings_mutable": false
+}
