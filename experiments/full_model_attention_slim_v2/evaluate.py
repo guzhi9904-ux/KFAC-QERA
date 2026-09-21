@@ -160,7 +160,7 @@ def eval_downstream(ctx):
             for task_name,metric in TASKS.items():
                 cp=f'downstream/{state}/{task_name}/complete.json'
                 if ctx.done(cp,candidate=candidate['identity']):files.append(ctx.root/cp);continue
-                tasks=task_dict(ctx);task=tasks[task_name]
+                tasks=task_dict(ctx,[task_name]);task=tasks[task_name]
                 actual=task_evidence(task,metric)
                 require(actual==expected['tasks'][task_name],'Task/data identity changed before scoring: '+task_name)
                 with ctx.timed('downstream_task',state=state,task=task_name):

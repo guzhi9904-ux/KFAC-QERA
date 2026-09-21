@@ -108,7 +108,7 @@ def c4_data(ctx, tokenizer):
     write(manifest, row)
     return row
 
-def task_dict(ctx):
+def task_dict(ctx,names=None):
     sys.path.insert(0, ctx.config['harness'])
     from lm_eval.tasks import get_task_dict, TaskManager
     import datasets
@@ -127,7 +127,7 @@ def task_dict(ctx):
             return datasets.DatasetDict(splits)
         return original(path,name,*args,**kwargs)
     datasets.load_dataset=frozen_load
-    try:return get_task_dict(list(TASKS), task_manager=TaskManager())
+    try:return get_task_dict(list(TASKS) if names is None else names, task_manager=TaskManager())
     finally:datasets.load_dataset=original
 
 def task_evidence(task, metric):

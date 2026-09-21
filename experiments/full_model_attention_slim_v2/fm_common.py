@@ -164,7 +164,13 @@ class Context:
         if torch.cuda.is_initialized():
             row['peak_GPU_GiB'] = [torch.cuda.max_memory_allocated(i) / 2**30 for i in range(2)]
         if time.monotonic()-self.last_storage_scan>60:
-            self.output_bytes=sum(p.stat().st_size for p in self.root.rglob('*') if p.is_file())
+            total=0
+            for p in self.root.rglob('*'):
+                try:
+                    if p.is_file():total+=p.stat().st_size
+                except FileNotFoundError:
+                    pass  # Another solve worker may atomically rename its own temporary file.
+            self.output_bytes=total
             self.output_peak_bytes=max(self.output_peak_bytes,self.output_bytes);self.last_storage_scan=time.monotonic()
         row.update(output_GiB=self.output_bytes/2**30,observed_peak_output_GiB=self.output_peak_bytes/2**30)
         return row
