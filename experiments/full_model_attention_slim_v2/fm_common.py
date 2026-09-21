@@ -1,6 +1,7 @@
 """Frozen run identity, checked atomic records and bounded resource accounting."""
 from __future__ import annotations
 import contextlib
+import gc
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ import shutil
 import sys
 import threading
 import time
+import weakref
 import torch
 from safetensors.torch import load_file, save_file
 
@@ -85,6 +87,26 @@ def tensors(path, values):
 def log(event, **fields):
     print(time.strftime('%Y-%m-%dT%H:%M:%S%z'), event, json.dumps(fields, ensure_ascii=False), flush=True)
 
+def release_for_solve(teacher):
+    """Reject retained model aliases before allocating the largest FP64 roots."""
+    reference = weakref.ref(teacher.model) if teacher.model is not None else None
+    teacher.unload()
+    gc.collect()
+    require(reference is None or reference() is None,
+            'Teacher still referenced at offline solve boundary; end the teacher phase scope first')
+    memory = []
+    if torch.cuda.is_initialized():
+        for device in range(torch.cuda.device_count()):
+            with torch.cuda.device(device):
+                torch.cuda.synchronize(); torch.cuda.empty_cache()
+            memory.append(dict(device=device, allocated_GiB=torch.cuda.memory_allocated(device)/2**30,
+                               reserved_GiB=torch.cuda.memory_reserved(device)/2**30))
+        require(all(row['allocated_GiB'] < 1 for row in memory),
+                'Live CUDA tensors remain at offline solve boundary')
+    evidence = dict(teacher_collected=True, GPU=memory)
+    log('OFFLINE_MEMORY_RELEASED', **evidence)
+    return evidence
+
 def source_files():
     dirs = [HERE, *[HERE.parent / d for d in (
         'qer_multimodule_three_fp64_v1', 'qer_kronecker_l10_v2', 'qer_teacher_kl_exp01',
@@ -112,6 +134,10 @@ class Context:
             Path(self.config['calibration']), Path(self.config['wikitext2']),
             Path(self.config['wikitext2']).with_suffix('.json'), Path(self.config['validation']),
             Path(self.config['ko_run']) / 'manifest.json', Path(self.config['ko_run']) / 'quantized/freeze.json']}
+        if self.config.get('preparation_parent'):
+            parent = Path(self.config['preparation_parent'])
+            parents.update({str(parent / p): sha(parent / p) for p in
+                            ('manifest.json', 'data/complete.json', 'quantization_complete.json')})
         material = dict(version=HERE.name, config=self.config, source=source_files(), parents=parents)
         self.identity = digest(material)
         manifest = dict(identity=self.identity, **material)

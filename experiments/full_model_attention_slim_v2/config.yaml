@@ -1,6 +1,8 @@
 {
   "base": "/share/home/tm902089733300000/a913520780/chengkang",
-  "run": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/full_model_attention_slim_v2/run_01",
+  "run": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/full_model_attention_slim_v2/run_02",
+  "preparation_parent": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/full_model_attention_slim_v2/run_01",
+  "preparation_parent_identity": "1f5830965de0f09a7df1a8675eed3ad70f34e591a7d277cd831392bf047ca78c",
   "assets": "/share/home/tm902089733300000/a913520780/chengkang/teacher_kl_assets/parents_v1",
   "model": "/share/home/tm902089733300000/a913520780/chengkang/modelzoo/Meta-Llama-3.1-8B",
   "ko_run": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/ko_increment_v1/run_01",

@@ -11,6 +11,39 @@ class Fixture:
     cleanup_temporary=Context.cleanup_temporary
 
 class FullModelTests(unittest.TestCase):
+    def test_offline_boundary_rejects_retained_teacher_alias(self):
+        from types import SimpleNamespace
+        model=torch.nn.Linear(3,3)
+        teacher=SimpleNamespace(model=model)
+        teacher.unload=lambda:setattr(teacher,'model',None)
+        with self.assertRaisesRegex(RuntimeError,'Teacher still referenced'):
+            release_for_solve(teacher)
+
+    def test_offline_boundary_collects_scoped_teacher(self):
+        from types import SimpleNamespace
+        teacher=SimpleNamespace(model=torch.nn.Linear(3,3))
+        teacher.unload=lambda:setattr(teacher,'model',None)
+        reference=weakref.ref(teacher.model)
+        def phase():
+            model=teacher.model
+            return model.weight.detach().cpu().clone()
+        result=phase()
+        self.assertTrue(release_for_solve(teacher)['teacher_collected'])
+        self.assertIsNone(reference())
+        self.assertEqual(tuple(result.shape),(3,3))
+
+    def test_recovery_rejects_modified_payload_and_path_escape(self):
+        from recovery import checked_parent_file
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);p=root/'frozen.json';write(p,{'tokens':'original'})
+            expected=sha(p)
+            self.assertEqual(checked_parent_file(root,'frozen.json',expected),p.resolve())
+            write(p,{'tokens':'modified'})
+            with self.assertRaisesRegex(RuntimeError,'file changed'):
+                checked_parent_file(root,'frozen.json',expected)
+            with self.assertRaisesRegex(RuntimeError,'escapes'):
+                checked_parent_file(root,'../outside',expected)
+
     def test_scalar_solver_matches_parent(self):
         self.assertTrue(mathematical_checks()['A_only_scalar_parent']['passed'])
 

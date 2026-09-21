@@ -35,10 +35,9 @@ def resume_check(ctx):
     ctx.cleanup_temporary(folder)
     return {'passed':True,'exact_tensor_equality':True,'count':2}
 
-def pilot(ctx):
-    require(ctx.done('data/complete.json'),'Data/teacher/Wq must freeze before pilot')
-    if ctx.done('verification/pilot_complete.json'):return
-    ctx.teacher.load();model=ctx.teacher.model;ids=checked_ids(ctx,'calibration');checks={};timing={}
+def teacher_checks(ctx):
+    # All model aliases and CUDA intermediates belong to this frame. Return CPU data only.
+    model=ctx.teacher.model;ids=checked_ids(ctx,'calibration');checks={};timing={}
     require(model.config._attn_implementation=='eager' and model.config.pretraining_tp==1,'Teacher attention backend differs')
     from transformers.models.llama.modeling_llama import repeat_kv
     mapping=repeat_kv(torch.arange(8).reshape(1,8,1,1),4).flatten().tolist()
@@ -106,14 +105,28 @@ def pilot(ctx):
     old=HFLM._loglikelihood_tokens(lm,requests,disable_tqdm=True)
     require(new[0][1]==old[0][1] and abs(new[0][0]-old[0][0])/max(abs(old[0][0]),1e-30)<=1e-5,'Harness head-chunking reference mismatch')
     checks['harness_reference']=dict(chunked=new,parent=old,tolerance=1e-5)
-    del lm;ctx.teacher.unload();gc.collect();warm_and_probe(['cuda:0','cuda:1'])
+    require(down_a.device.type=='cpu','Pilot Gram must leave teacher phase on CPU')
+    return down_a,checks,timing
+
+def pilot(ctx):
+    require(ctx.done('data/complete.json'),'Data/teacher/Wq must freeze before pilot')
+    if ctx.done('verification/pilot_complete.json'):return
+    ctx.teacher.load()
+    down_a,checks,timing=teacher_checks(ctx)
+    checks['offline_memory_release']=release_for_solve(ctx.teacher)
+    warm_and_probe(['cuda:0','cuda:1'])
     checks['A_only_equivalence']=mathematical_checks('cuda:0')
     # Largest matrix pilot: exact 14336-dimensional A eigensolve and full down SVD.
     key=name(0,'down');row=read(ctx.root/'quantization_manifest.json')['modules'][key]
     wq=load_file(row['path'])['Wq'].to('cuda:0');w0=original_weight(ctx,key,'cuda:0')
+    torch.cuda.reset_peak_memory_stats(0)
+    log('LARGEST_DOWN_SOLVE_START',dimension=14336,precision='FP64',rank=64)
     start=time.monotonic()
     f,audit=solve_one(w0.double()-wq.double(),(down_a/(2*L)).to('cuda:0'),None,w0,wq)
     timing['largest_down_solve']=time.monotonic()-start;checks['largest_down_solver']=audit
+    checks['largest_down_peak_GPU_GiB']=torch.cuda.max_memory_allocated(0)/2**30
+    log('LARGEST_DOWN_SOLVE_ACCEPTED',seconds=timing['largest_down_solve'],
+        peak_GPU_GiB=checks['largest_down_peak_GPU_GiB'])
     del down_a,w0,wq,f;gc.collect();torch.cuda.empty_cache()
     checks['resources']=ctx.resource_snapshot();checks['timing']=timing
     write(ctx.root/'verification/pilot.json',checks)

@@ -158,6 +158,9 @@ def freeze_tasks(ctx):
 def prepare(ctx):
     if ctx.done('data/complete.json'):
         return
+    if ctx.config.get('preparation_parent'):
+        from recovery import reuse_preparation
+        return reuse_preparation(ctx)
     from transformers import AutoTokenizer
     from audit import freeze_weights
     tok = AutoTokenizer.from_pretrained(ctx.config['model'], local_files_only=True)

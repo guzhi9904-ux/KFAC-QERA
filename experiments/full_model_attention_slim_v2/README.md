@@ -32,3 +32,13 @@ Missing data or failed gates produce a partial report, never successful completi
 Scientific settings are frozen in JSON-compatible `config.yaml`. Personal quota evidence is separate
 from filesystem-wide free space. Checkpoints retain current/previous generations only inside this run's
 temporary directory. The parent model, old results and parent code remain read-only.
+
+The 2026-09-22 recovery uses `run_02`. The failed `run_01` pilot retained a local teacher alias
+while starting the 14336-dimensional FP64 root, causing CUDA OOM. Teacher checks now end their
+function scope before unloading; a weak-reference and live CUDA allocation gate precedes offline
+solves. The real largest down root/SVD must pass before statistics collection starts.
+Preparation recovery verifies the pinned parent identity, unchanged scientific configuration,
+borrowed source, data and all 224 Wq hashes. It copies small frozen inputs and label receipts,
+references the original Wq files, and rechecks the exact downstream contents/configuration.
+No old statistics, factors or scores are imported. The old run remains intact; precision, rank,
+damping and numerical acceptance gates are unchanged.

@@ -59,7 +59,7 @@ def solve(ctx):
     require(ctx.done('statistics/functional_complete.json',windows=N,groups=8),'Functional statistics incomplete')
     if ctx.done('factors/complete.json',factors=416):
         return
-    ctx.teacher.unload();warm_and_probe(['cuda:0','cuda:1'])
+    release_for_solve(ctx.teacher);warm_and_probe(['cuda:0','cuda:1'])
     quant=read(ctx.root/'quantization_manifest.json')['modules']
     def worker(device,layers):
         torch.cuda.set_device(device)

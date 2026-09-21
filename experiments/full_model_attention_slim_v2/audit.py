@@ -45,7 +45,8 @@ def audit(ctx):
     (ctx.root/'audit/reuse_plan.md').write_text(
         '# Reuse plan\n\nCalibration: frozen SlimPajama 256×2048. WT2 test: all 138 historical windows (verified actual shape). '
         'KL: 16 frozen development validation windows. Teacher and existing MXINT3 Wq are hash checked. '
-        'All ordinary A, predictive labels, attention G, K one-step and V attention-aware statistics are new. '
+        'All ordinary A, attention G, K one-step and V attention-aware statistics are new. '
+        'Predictive labels are frozen once per window; a failed-pilot preparation parent may supply its verified labels. '
         'For every layer 0–31, Q/K/V share ordinary A; gate/up share ordinary A; O/down are separate. '
         'No historical WT2 factors, CE gradients, BF16 model scores or previous candidate scores are reused.\n', encoding='utf-8')
     ctx.commit('audit/complete.json', [ctx.root/'audit/parent_assets_audit.json', ctx.root/'audit/reuse_plan.md'])
