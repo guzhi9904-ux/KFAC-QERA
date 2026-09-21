@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+REPO=$(cd -- "$HERE/../.." && pwd)
+BASE=$(cd -- "$REPO/.." && pwd)
+RUN=${1:-"$BASE/qera_runs/k_token_one_v1/run_01"}
+mkdir -p "$RUN/logs"
+trap 'code=$?; printf "TOKEN_ONE_EXIT %s %s\n" "$code" "$(date -Is)"' EXIT
+export CUDA_VISIBLE_DEVICES=0,1 OMP_NUM_THREADS=8 MKL_NUM_THREADS=8
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+cd "$REPO"
+printf 'TOKEN_ONE_START %s\n' "$(date -Is)"
+"$BASE/conda_envs/qera-original-a/bin/python" -u -B "$HERE/runner.py" \
+ --ko-run "$BASE/qera_runs/ko_increment_v1/run_01" \
+ --sens-run "$BASE/qera_runs/k_sensitivity_v1/run_01" --output "$RUN"
