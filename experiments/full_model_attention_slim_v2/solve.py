@@ -36,13 +36,13 @@ def solve_one(error,a,g,w0,wq,rank=64,prepared=None):
     require(transform<=1e-8 and tail_error<=1e-8,'Weighted-SVD/back-transform gate failed')
     deployed=wq.to(error.device)+c.float()
     actual=w0.to(error.device).double()-deployed.double();qd=objective(actual)
-    drift=abs(qd-obj)/max(abs(qd),abs(obj),1e-30)
+    drift=abs(qd-obj)/max(abs(qd),abs(obj),sm.PLAN['denominator_floor'])
     require(drift<=1e-4,'FP32 deployment proxy drift failed')
     audit=dict(rank=rank,A_gauge_divisor=scale,G_gauge_multiplier=scale,A_damping=am,G_damping=gm,
         dense_SVD=True,driver='gesvd' if b.is_cuda else 'default_cpu',seconds=time.monotonic()-start,
         tail_energy_half=tail,solve_objective=obj,tail_relative_error=tail_error,back_transform_error=transform,
         singular_at_rank=float(s[rank-1]),singular_after_rank=float(s[rank]) if rank<len(s) else None,
-        deployment_relative_drift=drift,deployed_objective=qd,W_deploy_hash=mo.digest_tensor(deployed),
+        deployment_relative_drift=drift,deployment_floor=sm.PLAN['denominator_floor'],deployed_objective=qd,W_deploy_hash=mo.digest_tensor(deployed),
         deployment='Wq + float32(P64 @ Q64); FP64 product; FP32 addition',scalar_G_path=g is None)
     return {'P64':p,'Q64':q},audit
 
