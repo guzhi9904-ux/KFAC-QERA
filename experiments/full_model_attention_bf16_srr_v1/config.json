@@ -1,0 +1,17 @@
+{
+  "base": "/share/home/tm902089733300000/a913520780/chengkang",
+  "run": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/full_model_attention_bf16_srr_v1/run_01",
+  "parent": "/share/home/tm902089733300000/a913520780/chengkang/qera_runs/full_model_attention_slim_v2/run_02",
+  "parent_identity": "eeb31b0264a1bace991dab55f914327db619de47885030251b67b53f4f5e8137",
+  "srr_tools": "/share/home/tm902089733300000/a913520780/chengkang/downstream_srr_mxint3_v1_tools",
+  "srr_reference": "/share/home/tm902089733300000/a913520780/chengkang/qera_diagnostics/downstream_srr_mxint3_v1",
+  "srr_helper_sha256": "2ef2d2a14a8b78f4ac043e4ad500d56996aa1bdd83615245f6c25442c4206599",
+  "model_dtype": "bfloat16", "factor_dtype": "bfloat16", "rank": 64,
+  "cpu_threads": 8, "batch_size": 1, "max_length": 4096, "vocab_chunk": 64,
+  "tasks": ["hellaswag", "winogrande", "boolq", "mmlu", "leaderboard_bbh"],
+  "ppl_states": ["Teacher", "C0", "C1", "C2", "C3", "C4"],
+  "downstream_states": ["Teacher", "C0", "C2", "C3", "C4"],
+  "num_fewshot": 0, "apply_chat_template": false,
+  "deployment": "BF16 Wq + (x @ Q64.T.to(BF16)) @ P64.T.to(BF16); two BF16 GEMMs and BF16 addition",
+  "statistics_and_factors": "reuse frozen FP32-teacher statistics and FP64 solved factors; no new calibration, labels, quantization or solve"
+}
